@@ -55,8 +55,6 @@ main{max-width:1100px;margin:0 auto;padding:20px;display:grid;grid-template-colu
 .day.is-empty{margin-bottom:10px}
 .day.is-empty .day-head h3{color:var(--muted)}
 .empty-note{color:var(--muted);font-size:14px;padding:4px 0 10px;border-bottom:1px solid var(--line)}
-.day-pick{margin-left:auto;font-size:13px;white-space:nowrap}
-.day-target{margin-left:auto;font-size:12px;font-weight:700;color:#000;background:var(--focus);border-radius:999px;padding:1px 8px;white-space:nowrap}
 .outside{font-size:12px;font-weight:700;color:var(--food)}
 .day-head{display:flex;align-items:baseline;gap:10px;margin:14px 0 4px}
 .day-head h3{margin:0;font-size:18px;font-weight:800}
@@ -75,7 +73,7 @@ main{max-width:1100px;margin:0 auto;padding:20px;display:grid;grid-template-colu
 body.is-dragging, body.is-dragging *{cursor:grabbing !important;user-select:none;-webkit-user-select:none}
 .day.drop-target .day-head h3{color:var(--ink)}
 .day-list:has(.drop-ph) .empty-note{display:none}
-.sort-time{font-size:13px;white-space:nowrap}
+.sort-time{margin-left:auto;font-size:13px;white-space:nowrap}
 .time{font-weight:700;font-size:14px;font-variant-numeric:tabular-nums;padding-top:2px}
 .time.anytime{color:var(--muted);font-weight:600}
 .time.slot{font-weight:700}
@@ -373,7 +371,6 @@ body.is-dragging, body.is-dragging *{cursor:grabbing !important;user-select:none
     $("schedCount").textContent=items.length;
     const byDay=new Map(tripDays().map(d=>[d,[]]));
     for(const it of items){ if(!byDay.has(it.day)) byDay.set(it.day,[]); byDay.get(it.day).push(it); }
-    const target=defaultDay();
     for(const day of [...byDay.keys()].sort()){
       const list=sortDay(byDay.get(day));
       const sec=el("section","day"+(list.length?"":" is-empty")); sec.id="day-"+day;
@@ -381,17 +378,6 @@ body.is-dragging, body.is-dragging *{cursor:grabbing !important;user-select:none
       head.append(el("h3","",fmtDay(day)));
       if(list.length) head.append(el("span","",list.length+(list.length===1?" item":" items")));
       if(day<TRIP_START || day>TRIP_END) head.append(el("span","outside","Outside trip dates"));
-      if(day===target){
-        head.append(el("span","day-target","New items go here"));
-      }else{
-        const pick=el("button","link day-pick","Plan this day"); pick.type="button";
-        pick.onclick=()=>{
-          lastDay=day; if(open && open.draft) open.draft.day=day; render();
-          setStatus("New items will go on "+fmtDay(day)+". Pick something from your list.");
-          if(window.matchMedia("(max-width:820px)").matches) document.querySelector(".pool").scrollIntoView({behavior:"smooth",block:"start"});
-        };
-        head.append(pick);
-      }
       sec.append(head);
       const dl=el("div","day-list"); dl.dataset.day=day;
       if(!list.length){ dl.append(el("div","empty-note","Nothing planned yet")); sec.append(dl); wrap.append(sec); continue; }
