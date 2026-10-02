@@ -110,6 +110,7 @@ main{max-width:980px;margin:0 auto;padding:20px}
 .other-wrap[hidden]{display:none}
 .foot{margin-top:32px;color:var(--muted);font-size:13px;max-width:70ch}
 </style>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
 <link rel="stylesheet" href="shared.css">
 </head>
 <body>
@@ -133,6 +134,13 @@ main{max-width:980px;margin:0 auto;padding:20px}
     <div id="candList"></div>
   </section>
 
+  <div class="view-toggle" role="group" aria-label="View">
+    <button type="button" id="viewList" aria-pressed="true">List</button><button type="button" id="viewMap" aria-pressed="false">Map</button>
+  </div>
+  <div id="mapWrap" hidden>
+    <div id="placesMap" class="places-map" role="region" aria-label="Map of all places"></div>
+    <div class="map-legend" aria-hidden="true"><span><i style="background:#0039A6"></i>Attractions</span><span><i style="background:#EE352E"></i>Restaurants</span><span><i style="background:#00933C"></i>Locations</span><span><i style="background:#808183"></i>Other</span><span>🏠 Home</span></div>
+  </div>
   <div class="lists">
     <section class="sec-attr">
       <div class="list-head"><span class="bullet b-attr" aria-hidden="true">A</span><h2>Attractions</h2><span class="count" id="countAttr">0</span></div>
@@ -157,7 +165,9 @@ main{max-width:980px;margin:0 auto;padding:20px}
 </main>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="shared.js"></script>
+<script src="maps.js"></script>
 <script>
 (function(){
   // Public client config. The anon key is meant to be public; access is controlled by row-level security.
@@ -209,13 +219,15 @@ main{max-width:980px;margin:0 auto;padding:20px}
 
   // ---------- data ----------
   async function load(force){
-    const [pr, vr, cr] = await Promise.all([
+    const [pr, vr, cr, hr] = await Promise.all([
       sb.from("places").select("*").is("deleted_at", null).order("created_at"),
       sb.from("votes").select("place_id,voter_id,voter_name,value"),
-      sb.from("comments").select("*").not("place_id","is",null)
+      sb.from("comments").select("*").not("place_id","is",null),
+      sb.from("trip_settings").select("value").eq("key","home").maybeSingle()
     ]);
     if(pr.error){ setStatus("Couldn't load the list. Refresh to try again."); return; }
     places = pr.data; votes = vr.data||[]; comments = cr.data||[];
+    home = hr && hr.data ? hr.data.value : null;
     tally = T.tally(votes);
     if(editing && !places.some(x=>x.id===editing.id)) editing=null;
     // Don't redraw under someone mid-typing; catch up when they leave the field.
@@ -442,7 +454,31 @@ main{max-width:980px;margin:0 auto;padding:20px}
     render();
     if(openThreads.has(id)){ const t=document.querySelector('[data-focus-key="thread:p:'+id+'"]'); if(t) t.focus(); }
   }
-  function render(){ T.preserveFocus(renderAll); }
+  function render(){ T.preserveFocus(renderAll); if(view==="map") drawMap(); }
+
+  // ---------- list / map view ----------
+  let view="list", home=null, placesMapObj=null, mapSig="";
+  try{ if(localStorage.getItem("places-view")==="map") view="map"; }catch(e){}
+  function setView(v){
+    view=v;
+    try{ localStorage.setItem("places-view",v); }catch(e){}
+    $("viewList").setAttribute("aria-pressed", v==="list"?"true":"false");
+    $("viewMap").setAttribute("aria-pressed", v==="map"?"true":"false");
+    document.querySelector(".lists").style.display = v==="map" ? "none" : "";
+    $("otherWrap").style.display = v==="map" ? "none" : "";
+    $("mapWrap").hidden = v!=="map";
+    if(v==="map") drawMap();
+  }
+  function drawMap(){
+    if(typeof L==="undefined") return;
+    const sig=JSON.stringify(places.map(p=>[p.id,p.category,p.lat,p.lng]))+(home?home.lat:"");
+    if(placesMapObj && sig===mapSig){ placesMapObj.invalidateSize(); return; }   // nothing moved: keep the user's pan/zoom
+    if(placesMapObj){ placesMapObj.remove(); placesMapObj=null; }
+    mapSig=sig;
+    placesMapObj=TripMaps.placesMap($("placesMap"), { places, home });
+  }
+  $("viewList").addEventListener("click",()=>setView("list"));
+  $("viewMap").addEventListener("click",()=>setView("map"));
   function renderAll(){
     renderList("attraction",$("listAttr"),$("countAttr"));
     renderList("restaurant",$("listFood"),$("countFood"));
@@ -530,7 +566,7 @@ main{max-width:980px;margin:0 auto;padding:20px}
     purge: async(r)=>{ T.ok(await sb.from("places").delete().eq("id",r.id)); }
   }));
 
-  load().then(()=>T.maybeAskName());
+  load().then(()=>{ T.maybeAskName(); setView(view); });
 })();
 </script>
 </body>

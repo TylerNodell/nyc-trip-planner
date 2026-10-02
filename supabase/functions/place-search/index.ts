@@ -6,6 +6,7 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 //                      or a pasted Google Maps link (resolved server-side, then matched)
 // POST { place_id } -> one place by Google place ID
 // POST { refresh: [uuid,...] } -> re-fetch opening hours for places on the list (max 25, skips ones checked in the last 12h)
+// POST { routes: { day, sig, by, legs:[{from:[lat,lng], to:[lat,lng], mode:'walk'|'transit'}] } } -> exact travel times via Google Routes, saved per day
 // Requires the secret GOOGLE_PLACES_API_KEY.
 
 const CORS = {
@@ -118,6 +119,41 @@ function json(body: unknown, status = 200) {
 
 class GoogleError extends Error {}
 
+type Leg = { from: [number, number]; to: [number, number]; mode: "walk" | "transit" };
+// deno-lint-ignore no-explicit-any
+async function computeLeg(key: string, l: Leg, triedWalk = false): Promise<any> {
+  const res = await fetch("https://routes.googleapis.com/directions/v2:computeRoutes", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Goog-Api-Key": key,
+      "X-Goog-FieldMask": "routes.duration,routes.distanceMeters,routes.polyline.encodedPolyline",
+    },
+    body: JSON.stringify({
+      origin: { location: { latLng: { latitude: l.from[0], longitude: l.from[1] } } },
+      destination: { location: { latLng: { latitude: l.to[0], longitude: l.to[1] } } },
+      travelMode: l.mode === "walk" ? "WALK" : "TRANSIT",
+    }),
+  });
+  if (!res.ok) {
+    console.error("routes error", res.status, await res.text());
+    return { ok: false, status: res.status };
+  }
+  const data = await res.json();
+  const r = data.routes?.[0];
+  if (!r) {
+    if (l.mode !== "walk" && !triedWalk) return computeLeg(key, { ...l, mode: "walk" }, true);
+    return { ok: false, status: 0 };
+  }
+  return {
+    ok: true,
+    mode: l.mode === "walk" ? "walk" : "transit",
+    min: Math.max(1, Math.round(parseInt(String(r.duration), 10) / 60)),
+    meters: r.distanceMeters ?? null,
+    poly: r.polyline?.encodedPolyline ?? null,
+  };
+}
+
 async function textSearch(key: string, textQuery: string, center = NYC, radius = 40000) {
   const res = await fetch("https://places.googleapis.com/v1/places:searchText", {
     method: "POST",
@@ -226,6 +262,30 @@ Deno.serve(async (req: Request) => {
   try { body = await req.json(); } catch { return json({ error: "bad_request" }, 400); }
 
   try {
+    if (body?.routes && typeof body.routes === "object") {
+      const { day, sig, legs, by } = body.routes;
+      const okLatLng = (a: unknown) => Array.isArray(a) && a.length === 2 && a.every((n) => typeof n === "number" && isFinite(n));
+      if (typeof day !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(day) || typeof sig !== "string" || sig.length > 4000 ||
+          !Array.isArray(legs) || !legs.length || legs.length > 14 ||
+          !legs.every((l: Leg) => okLatLng(l?.from) && okLatLng(l?.to) && (l.mode === "walk" || l.mode === "transit"))) {
+        return json({ error: "bad_request" }, 400);
+      }
+      const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+      const { data: existing } = await admin.from("day_routes").select("*").eq("day", day).maybeSingle();
+      if (existing && existing.sig === sig && Date.now() - new Date(existing.computed_at).getTime() < 10 * 60 * 1000) {
+        return json({ legs: existing.legs, cached: true });
+      }
+      const out = await Promise.all(legs.map((l: Leg) => computeLeg(key, l)));
+      if (out.every((o) => !o.ok)) {
+        const denied = out.some((o) => o.status === 403);
+        return json({ error: denied ? "routes_disabled" : "no_routes" }, 502);
+      }
+      await admin.from("day_routes").upsert({
+        day, sig, legs: out, computed_at: new Date().toISOString(), computed_by: String(by ?? "").slice(0, 40),
+      });
+      return json({ legs: out });
+    }
+
     if (Array.isArray(body?.refresh)) {
       const ids = body.refresh.filter((x: unknown) => typeof x === "string" && /^[0-9a-f-]{36}$/i.test(x as string)).slice(0, 25);
       if (!ids.length) return json({ updated: 0 });
