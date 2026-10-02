@@ -234,6 +234,57 @@
       return !!(ae && ae.closest && ae.closest(".editor, .desc-editor, .thread, dialog") && /^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName));
     };
 
+    // ---------- context menu (right-click, long-press, or a More button) ----------
+    // items: [{ label, fn, danger }] with "-" for a divider.
+    const menu = el("div","menu"); menu.setAttribute("role","menu"); menu.hidden = true; document.body.append(menu);
+    let menuReturn = null, menuOpenedAt = 0;
+    function closeMenu(restore){
+      if(menu.hidden) return;
+      menu.hidden = true; menu.replaceChildren();
+      if(restore && menuReturn && document.contains(menuReturn)) menuReturn.focus();
+      menuReturn = null;
+    }
+    api.closeMenu = closeMenu;
+    api.openMenu = ({ title, items, x, y, focusFirst, returnTo })=>{
+      closeMenu(false);
+      menuReturn = returnTo || null;
+      menu.setAttribute("aria-label", "Options for "+title);
+      menu.append(el("div","menu-title",title));
+      for(const it of items){
+        if(it==="-"){ menu.append(el("hr")); continue; }
+        const b = el("button", it.danger?"danger":"", it.label); b.type="button"; b.setAttribute("role","menuitem"); b.tabIndex=-1;
+        b.onclick = ()=>{ closeMenu(false); it.fn(); };
+        menu.append(b);
+      }
+      menu.hidden = false; menuOpenedAt = performance.now();
+      const r = menu.getBoundingClientRect();
+      const vw = document.documentElement.clientWidth, vh = document.documentElement.clientHeight;
+      menu.style.left = Math.max(8, Math.min(x, vw-r.width-8))+"px";
+      menu.style.top = Math.max(8, Math.min(y, vh-r.height-8))+"px";
+      if(focusFirst){ const f=menu.querySelector("button"); if(f) f.focus(); }
+    };
+    // Wire a row: right-click opens at the pointer; the keyboard menu key opens at the row.
+    api.contextMenuFor = (row, getMenu, skipSelector)=>{
+      row.addEventListener("contextmenu", e=>{
+        if(skipSelector && e.target.closest(skipSelector)) return;   // keep the browser menu while typing
+        e.preventDefault();
+        let x=e.clientX, y=e.clientY, kb=false;
+        if(!x && !y){ const r=row.getBoundingClientRect(); x=r.left+16; y=r.top+16; kb=true; }
+        api.openMenu({ ...getMenu(), x, y, focusFirst:kb, returnTo: kb ? document.activeElement : null });
+      });
+    };
+    document.addEventListener("pointerdown", e=>{ if(!menu.hidden && !menu.contains(e.target)) closeMenu(false); });
+    window.addEventListener("scroll", ()=>{ if(performance.now()-menuOpenedAt>200) closeMenu(false); }, true);
+    window.addEventListener("resize", ()=>closeMenu(false));
+    menu.addEventListener("keydown", e=>{
+      const btns=[...menu.querySelectorAll("button")], i=btns.indexOf(document.activeElement);
+      if(e.key==="Escape"||e.key==="Tab"){ e.preventDefault(); closeMenu(true); }
+      else if(e.key==="ArrowDown"){ e.preventDefault(); btns[(i+1)%btns.length].focus(); }
+      else if(e.key==="ArrowUp"){ e.preventDefault(); btns[(i-1+btns.length)%btns.length].focus(); }
+      else if(e.key==="Home"){ e.preventDefault(); btns[0].focus(); }
+      else if(e.key==="End"){ e.preventDefault(); btns[btns.length-1].focus(); }
+    });
+
     // ---------- votes helpers ----------
     // votes: [{place_id, voter_id, voter_name, value}]
     api.tally = (votes)=>{

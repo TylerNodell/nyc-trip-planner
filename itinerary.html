@@ -508,11 +508,7 @@ body.is-dragging, body.is-dragging *{cursor:grabbing !important;user-select:none
               return true;
             }}));
         }else{
-          const act=el("div","actions");
-          const ed=el("button","link","Change time"); ed.type="button"; ed.onclick=()=>openEditor(key);
-          const a=el("a","link","Map"); a.href=mapsUrl(it); a.target="_blank"; a.rel="noopener";
-          const rm=el("button","link danger","Remove"); rm.type="button";
-          rm.onclick=async()=>{
+          const removeItem=async()=>{
             const { error } = await sb.from("schedule_items").update({ deleted_at:new Date().toISOString(), ...T.by() }).eq("id",it.id);
             if(error){ setStatus("Couldn't remove that."); return; }
             items=items.filter(x=>x.id!==it.id); render();
@@ -521,11 +517,30 @@ body.is-dragging, body.is-dragging *{cursor:grabbing !important;user-select:none
             T.toast(msg, async()=>{ T.ok(await sb.from("schedule_items").update({ deleted_at:null, ...T.by() }).eq("id",it.id)); await load(true); });
           };
           const ic=comments.filter(c=>c.schedule_item_id===it.id);
-          const cm=el("button","link cmt-toggle", openThreads.has(it.id) ? "Hide comments" : ic.length ? "💬 "+ic.length : "Comment");
-          cm.type="button"; cm.setAttribute("aria-expanded", openThreads.has(it.id)?"true":"false"); cm.dataset.focusKey="cmt:"+it.id;
-          cm.onclick=()=>toggleThread(it.id);
-          act.append(ed,a,cm,rm); body.append(act);
-          if(openThreads.has(it.id)) body.append(T.thread({ key:"s:"+it.id, comments:ic, target:{ schedule_item_id:it.id }, label:it.name, onChange:()=>load(true) }));
+          const menuFor=()=>({ title:it.name, items:[
+            { label:"Change time…", fn:()=>openEditor(key) },
+            { label: openThreads.has(it.id) ? "Hide comments" : ic.length ? "Comments ("+ic.length+")" : "Add a comment", fn:()=>toggleThread(it.id) },
+            { label:"Open in Google Maps", fn:()=>window.open(mapsUrl(it),"_blank","noopener") },
+            "-",
+            { label:"Remove", danger:true, fn:removeItem }
+          ]});
+          const act=el("div","actions");
+          if(ic.length && !openThreads.has(it.id)){
+            const cm=el("button","link cmt-toggle","💬 "+ic.length); cm.type="button";
+            cm.setAttribute("aria-label","Show "+ic.length+" comment"+(ic.length>1?"s":"")+" on "+it.name); cm.dataset.focusKey="cmt:"+it.id;
+            cm.onclick=()=>toggleThread(it.id);
+            act.append(cm);
+          }
+          const more=el("button","link more-btn","More"); more.type="button";
+          more.setAttribute("aria-haspopup","menu"); more.setAttribute("aria-label","More options for "+it.name); more.dataset.focusKey="more:"+it.id;
+          more.onclick=(e)=>{ const r=more.getBoundingClientRect(); T.openMenu({ ...menuFor(), x:r.left, y:r.bottom+4, focusFirst:e.detail===0, returnTo:more }); };
+          act.append(more); body.append(act);
+          T.contextMenuFor(row, menuFor, ".editor, .thread, input, textarea, select");
+          if(openThreads.has(it.id)){
+            const th=T.thread({ key:"s:"+it.id, comments:ic, target:{ schedule_item_id:it.id }, label:it.name, onChange:()=>load(true) });
+            const hide=el("button","link cmt-hide","Hide comments"); hide.type="button"; hide.onclick=()=>toggleThread(it.id);
+            th.append(hide); body.append(th);
+          }
           if(it.created_by) body.append(el("div","byline","Added by "+it.created_by));
         }
         row.append(h,t,body); dl.append(row);
