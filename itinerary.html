@@ -110,6 +110,17 @@ body.is-dragging, body.is-dragging *{cursor:grabbing !important;user-select:none
 .pbody{flex:1;min-width:0}
 .pname{font-weight:700;font-size:15px}
 .tag{font-size:12px;font-weight:700;color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:1px 7px;margin-left:4px;white-space:nowrap}
+.sched-tag{background:var(--focus);border-color:var(--focus);color:#000;cursor:pointer;line-height:1.45;vertical-align:1px}
+.sched-tag:hover{background:#FFD83A;border-color:#000}
+.sched-tag:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+.entry{border-radius:8px}
+.entry.flash{animation:flash 1.6s ease-out}
+@keyframes flash{
+  0%,18%{background:rgba(252,204,10,.65);box-shadow:0 0 0 6px rgba(252,204,10,.65)}
+  30%{background:rgba(252,204,10,.2);box-shadow:0 0 0 6px rgba(252,204,10,.2)}
+  45%{background:rgba(252,204,10,.65);box-shadow:0 0 0 6px rgba(252,204,10,.65)}
+  100%{background:transparent;box-shadow:0 0 0 6px transparent}
+}
 .btn{border:2px solid transparent;border-radius:6px;padding:8px 12px;font-weight:700;cursor:pointer;white-space:nowrap;font-size:14px}
 .btn-primary{background:var(--focus);color:#000}
 .btn-primary:disabled{opacity:.55;cursor:default}
@@ -464,7 +475,14 @@ body.is-dragging, body.is-dragging *{cursor:grabbing !important;user-select:none
       row.append(ph, bullet(p.category));
       const body=el("div","pbody");
       const nm=el("div","pname",p.name+(p.reaction==="up"?" 👍":""));
-      const n=counts.get(p.id); if(n) nm.append(el("span","tag",n>1?"Scheduled ×"+n:"Scheduled"));
+      const n=counts.get(p.id);
+      if(n){
+        const tg=el("button","tag sched-tag",n>1?"Scheduled ×"+n:"Scheduled"); tg.type="button";
+        tg.title=n>1?"Show on the schedule (click again for the next one)":"Show on the schedule";
+        tg.setAttribute("aria-label","Show "+p.name+" on the schedule");
+        tg.onclick=(e)=>jumpToScheduled(p, e.detail===0);
+        nm.append(tg);
+      }
       body.append(nm);
       if(p.neighborhood && p.neighborhood!==p.area) body.append(el("div","meta",p.neighborhood));
       row.append(body);
@@ -494,6 +512,37 @@ body.is-dragging, body.is-dragging *{cursor:grabbing !important;user-select:none
     }
   }
   $("customBtn").onclick=()=>openEditor("custom");
+
+  // ---------- jump from a "Scheduled" badge to the item on the schedule ----------
+  const jumpNext=new Map();   // place id -> which occurrence to show next
+  function waitForScrollEnd(){
+    return new Promise(resolve=>{
+      let done=false, last=-1, still=0;
+      const finish=()=>{ if(done) return; done=true; window.removeEventListener("scrollend",finish); resolve(); };
+      window.addEventListener("scrollend",finish,{once:true});
+      // Fallback for browsers without scrollend: wait until the page stops moving.
+      const tick=()=>{ if(done) return; const y=window.scrollY; still = y===last ? still+1 : 0; last=y; if(still>=6) finish(); else requestAnimationFrame(tick); };
+      requestAnimationFrame(tick);
+      setTimeout(finish,1500);
+    });
+  }
+  async function jumpToScheduled(p, fromKeyboard){
+    const occ=items.filter(i=>i.place_id===p.id).sort((a,b)=>a.day<b.day?-1:a.day>b.day?1:(a.position-b.position));
+    if(!occ.length) return;
+    const k=(jumpNext.get(p.id)||0)%occ.length; jumpNext.set(p.id,k+1);
+    const it=occ[k];
+    const row=document.querySelector('.entry[data-id="'+it.id+'"]');
+    if(!row) return;
+    const reduce=window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const r=row.getBoundingClientRect();
+    const inView=r.top>=80 && r.bottom<=window.innerHeight-40;
+    if(!inView){ row.scrollIntoView({behavior:reduce?"auto":"smooth", block:"center"}); await waitForScrollEnd(); }
+    const target=document.querySelector('.entry[data-id="'+it.id+'"]') || row;   // may have been redrawn meanwhile
+    target.classList.remove("flash"); void target.offsetWidth; target.classList.add("flash");
+    target.addEventListener("animationend",()=>target.classList.remove("flash"),{once:true});
+    if(fromKeyboard){ const h=target.querySelector(".handle"); if(h) h.focus({preventScroll:true}); }
+    setStatus(p.name+" is on "+fmtDay(it.day)+(it.start_time?" at "+fmtTime(it.start_time):"")+(occ.length>1?" ("+(k+1)+" of "+occ.length+")":"")+".");
+  }
 
   // ---------- drag and drop (pointer events: mouse, touch, pen) ----------
   let drag=null;
