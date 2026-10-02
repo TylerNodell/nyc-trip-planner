@@ -43,10 +43,19 @@ const ATTRACTION = new Set([
   "tour_agency", "planetarium", "library", "market",
 ]);
 
-function classify(t: string | undefined): "restaurant" | "attraction" | null {
+// Streets, neighborhoods, and other areas rather than businesses or sights.
+const LOCATION = new Set([
+  "route", "street_address", "intersection", "neighborhood", "sublocality", "sublocality_level_1",
+  "sublocality_level_2", "locality", "colloquial_area", "premise", "subpremise", "postal_code",
+  "administrative_area_level_3", "island", "natural_feature",
+]);
+
+type Category = "restaurant" | "attraction" | "location";
+function classify(t: string | undefined): Category | null {
   if (!t) return null;
   if (FOOD.has(t) || t.endsWith("_restaurant")) return "restaurant";
   if (ATTRACTION.has(t)) return "attraction";
+  if (LOCATION.has(t)) return "location";
   return null;
 }
 

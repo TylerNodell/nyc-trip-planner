@@ -12,14 +12,14 @@
 :root{
   --bg:#F2F3F4; --panel:#FFFFFF; --ink:#000000; --muted:#5B6166; --line:#D5D8DB;
   --sign:#000000; --sign-ink:#FFFFFF;
-  --attr:#0039A6; --food:#EE352E; --other:#808183; --focus:#FCCC0A;
+  --attr:#0039A6; --food:#EE352E; --loc:#00933C; --other:#808183; --focus:#FCCC0A;
   box-sizing:border-box;
   padding-top:env(safe-area-inset-top,0px);
   padding-bottom:env(safe-area-inset-bottom,0px);
 }
 @media (prefers-color-scheme: dark){
   :root{ --bg:#121416; --panel:#1C1F22; --ink:#F2F3F4; --muted:#9BA2A8; --line:#30353A;
-    --attr:#3A6FD8; --food:#F0524C; --other:#9A9B9D; }
+    --attr:#3A6FD8; --food:#F0524C; --loc:#2DB45A; --other:#9A9B9D; }
 }
 html{scroll-padding-top:env(safe-area-inset-top,0px)}
 *,*::before,*::after{box-sizing:inherit}
@@ -41,7 +41,7 @@ button,input{font:inherit;color:inherit}
 .bullets{display:inline-flex;gap:6px;vertical-align:middle;margin-left:10px}
 .bullet{width:1.1em;height:1.1em;border-radius:50%;display:inline-grid;place-items:center;
   color:#fff;font-weight:800;font-size:.55em;flex:none}
-.b-attr{background:var(--attr)} .b-food{background:var(--food)} .b-other{background:var(--other)}
+.b-attr{background:var(--attr)} .b-food{background:var(--food)} .b-loc{background:var(--loc)} .b-other{background:var(--other)}
 
 .search{display:flex;gap:8px}
 .search input{flex:1;min-width:0;padding:13px 14px;border:2px solid #fff;border-radius:6px;background:#fff;color:#000;font-size:17px}
@@ -79,8 +79,10 @@ main{max-width:980px;margin:0 auto;padding:20px}
 .warn{color:var(--food);font-size:14px;font-weight:600}
 .cand .btn{align-self:center}
 
-.lists{display:grid;grid-template-columns:1fr 1fr;gap:24px}
-@media (max-width:720px){.lists{grid-template-columns:1fr}}
+.lists{display:grid;grid-template-columns:1fr 1fr;grid-template-rows:auto 1fr;grid-template-areas:"attr food" "loc food";gap:28px 24px}
+.lists > section{align-self:start;min-width:0}
+.sec-attr{grid-area:attr} .sec-food{grid-area:food} .sec-loc{grid-area:loc}
+@media (max-width:720px){.lists{grid-template-columns:1fr;grid-template-rows:none;grid-template-areas:"attr" "food" "loc"}}
 .list-head{display:flex;align-items:center;gap:10px;border-bottom:3px solid var(--ink);padding-bottom:8px;margin-bottom:4px}
 .list-head .bullet{font-size:34px}
 .list-head h2{margin:0;font-size:22px;font-weight:800;letter-spacing:-.01em}
@@ -112,7 +114,7 @@ main{max-width:980px;margin:0 auto;padding:20px}
 <header class="sign">
   <div class="sign-inner">
     <nav class="nav" aria-label="Pages"><a href="./" aria-current="page">Places</a><a href="./itinerary.html">Itinerary</a></nav>
-    <h1>NYC trip list <span class="bullets" aria-hidden="true"><span class="bullet b-attr">A</span><span class="bullet b-food">R</span></span></h1>
+    <h1>NYC trip list <span class="bullets" aria-hidden="true"><span class="bullet b-attr">A</span><span class="bullet b-food">R</span><span class="bullet b-loc">L</span></span></h1>
     <p>Type a place or paste a Google Maps link, pick the right match, and it lands in the right list.</p>
     <form class="search" id="searchForm" autocomplete="off">
       <label for="q" class="sr">Place name</label>
@@ -130,13 +132,17 @@ main{max-width:980px;margin:0 auto;padding:20px}
   </section>
 
   <div class="lists">
-    <section>
+    <section class="sec-attr">
       <div class="list-head"><span class="bullet b-attr" aria-hidden="true">A</span><h2>Attractions</h2><span class="count" id="countAttr">0</span></div>
       <div id="listAttr"><div class="empty">Loading…</div></div>
     </section>
-    <section>
+    <section class="sec-food">
       <div class="list-head"><span class="bullet b-food" aria-hidden="true">R</span><h2>Restaurants</h2><span class="count" id="countFood">0</span></div>
       <div id="listFood"><div class="empty">Loading…</div></div>
+    </section>
+    <section class="sec-loc">
+      <div class="list-head"><span class="bullet b-loc" aria-hidden="true">L</span><h2>Locations</h2><span class="count" id="countLoc">0</span></div>
+      <div id="listLoc"><div class="empty">Loading…</div></div>
     </section>
   </div>
   <section class="other-wrap" id="otherWrap" hidden>
@@ -157,6 +163,7 @@ main{max-width:980px;margin:0 auto;padding:20px}
   const CATS = {
     attraction:{label:"Attractions", cls:"b-attr", letter:"A"},
     restaurant:{label:"Restaurants", cls:"b-food", letter:"R"},
+    location:{label:"Locations", cls:"b-loc", letter:"L"},
     other:{label:"Other", cls:"b-other", letter:"O"}
   };
   const $ = id => document.getElementById(id);
@@ -170,7 +177,7 @@ main{max-width:980px;margin:0 auto;padding:20px}
 
   function el(tag, cls, text){ const e=document.createElement(tag); if(cls) e.className=cls; if(text!=null) e.textContent=text; return e; }
   function bullet(cat){ const c=CATS[cat]||CATS.other; const b=el("span","bullet "+c.cls,c.letter); b.setAttribute("aria-hidden","true"); return b; }
-  function normCat(c){ return c==="restaurant"||c==="attraction" ? c : "other"; }
+  function normCat(c){ return c==="restaurant"||c==="attraction"||c==="location" ? c : "other"; }
   function rank(p){ return p.reaction==="up"?0:p.reaction==="down"?2:1; }
   function setStatus(t){ statusEl.textContent=t||""; }
   function mapsUrl(p){
@@ -282,7 +289,7 @@ main{max-width:980px;margin:0 auto;padding:20px}
 
   // ---------- context menu ----------
   const menu=el("div","menu"); menu.setAttribute("role","menu"); menu.hidden=true; document.body.append(menu);
-  let menuReturnFocus=null;
+  let menuReturnFocus=null, menuOpenedAt=0;
   function closeMenu(restore){
     if(menu.hidden) return;
     menu.hidden=true; menu.replaceChildren();
@@ -300,7 +307,7 @@ main{max-width:980px;margin:0 auto;padding:20px}
     menu.setAttribute("aria-label","Options for "+p.name);
     menu.append(el("div","menu-title",p.name));
     const cur=normCat(p.category);
-    for(const c of ["attraction","restaurant","other"]) if(c!==cur) menuItem("Move to "+CATS[c].label, ()=>movePlace(p,c));
+    for(const c of ["attraction","restaurant","location","other"]) if(c!==cur) menuItem("Move to "+CATS[c].label, ()=>movePlace(p,c));
     menu.append(el("hr"));
     menuItem(p.description ? "Edit description…" : "Write a description…", ()=>{
       editing={ id:p.id, draft:p.description||p.summary||"", fresh:true }; render();
@@ -309,7 +316,7 @@ main{max-width:980px;margin:0 auto;padding:20px}
     menu.append(el("hr"));
     menuItem("Open in Google Maps", ()=>window.open(mapsUrl(p),"_blank","noopener"));
     menuItem("Remove", ()=>removePlace(p), "danger");
-    menu.hidden=false;
+    menu.hidden=false; menuOpenedAt=performance.now();
     const r=menu.getBoundingClientRect();
     const vw=document.documentElement.clientWidth, vh=document.documentElement.clientHeight;
     menu.style.left=Math.max(8,Math.min(x,vw-r.width-8))+"px";
@@ -317,7 +324,8 @@ main{max-width:980px;margin:0 auto;padding:20px}
     if(focusFirst) menu.querySelector("button").focus();
   }
   document.addEventListener("pointerdown",e=>{ if(!menu.hidden && !menu.contains(e.target)) closeMenu(false); });
-  window.addEventListener("scroll",()=>closeMenu(false),true);
+  // Ignore scroll that was already in flight when the menu opened.
+  window.addEventListener("scroll",()=>{ if(performance.now()-menuOpenedAt>200) closeMenu(false); },true);
   window.addEventListener("resize",()=>closeMenu(false));
   menu.addEventListener("keydown",e=>{
     const items=[...menu.querySelectorAll("button")];
@@ -384,6 +392,7 @@ main{max-width:980px;margin:0 auto;padding:20px}
   function render(){
     renderList("attraction",$("listAttr"),$("countAttr"));
     renderList("restaurant",$("listFood"),$("countFood"));
+    renderList("location",$("listLoc"),$("countLoc"));
     $("otherWrap").hidden = renderList("other",$("listOther"),$("countOther"))===0;
   }
 
@@ -417,7 +426,7 @@ main{max-width:980px;margin:0 auto;padding:20px}
       mb.append(el("div","meta","Couldn't read that link. In Google Maps, open the place and use Share → Copy link, or type the name instead."));
     }else{
       mb.append(el("div","meta",'Not it? Add "'+manualName+'" yourself:'));
-      for(const c of ["attraction","restaurant"]){
+      for(const c of ["attraction","restaurant","location"]){
         const b=el("button","btn btn-ghost","As "+c); b.type="button";
         b.onclick=async()=>{ if(await addPlace({name:manualName,category:c})){ $("results").hidden=true; $("q").value=""; } };
         manual.append(b);
