@@ -1,0 +1,314 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>NYC trip list</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🗽</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;500;700;800&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#F2F3F4; --panel:#FFFFFF; --ink:#000000; --muted:#5B6166; --line:#D5D8DB;
+  --sign:#000000; --sign-ink:#FFFFFF;
+  --attr:#0039A6; --food:#EE352E; --other:#808183; --focus:#FCCC0A;
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px);
+  padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme: dark){
+  :root{ --bg:#121416; --panel:#1C1F22; --ink:#F2F3F4; --muted:#9BA2A8; --line:#30353A;
+    --attr:#3A6FD8; --food:#F0524C; --other:#9A9B9D; }
+}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*,*::before,*::after{box-sizing:inherit}
+body{margin:0;background:var(--bg);color:var(--ink);
+  font-family:"Schibsted Grotesk",-apple-system,"Helvetica Neue",Helvetica,Arial,sans-serif;
+  font-size:16px;line-height:1.45}
+button,input{font:inherit;color:inherit}
+:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
+.sr{position:absolute;left:-9999px}
+
+.sign{background:var(--sign);color:var(--sign-ink);padding:22px 20px 20px;border-bottom:4px solid var(--sign-ink)}
+.sign-inner{max-width:980px;margin:0 auto}
+.sign h1{margin:0;font-weight:800;font-size:clamp(30px,6vw,44px);letter-spacing:-.02em;line-height:1.05}
+.sign p{margin:6px 0 18px;color:#C9CDD1;font-size:15px}
+.bullets{display:inline-flex;gap:6px;vertical-align:middle;margin-left:10px}
+.bullet{width:1.1em;height:1.1em;border-radius:50%;display:inline-grid;place-items:center;
+  color:#fff;font-weight:800;font-size:.55em;flex:none}
+.b-attr{background:var(--attr)} .b-food{background:var(--food)} .b-other{background:var(--other)}
+
+.search{display:flex;gap:8px}
+.search input{flex:1;min-width:0;padding:13px 14px;border:2px solid #fff;border-radius:6px;background:#fff;color:#000;font-size:17px}
+.search input::placeholder{color:#6d7378}
+.btn{border:2px solid transparent;border-radius:6px;padding:12px 16px;font-weight:700;cursor:pointer;white-space:nowrap}
+.btn-primary{background:var(--focus);color:#000}
+.btn-primary:disabled{opacity:.55;cursor:default}
+.btn-ghost{background:transparent;border-color:var(--line);color:var(--ink);padding:8px 12px;font-weight:600;font-size:14px}
+.status{min-height:1.4em;margin-top:10px;font-size:14px;color:#C9CDD1}
+
+main{max-width:980px;margin:0 auto;padding:20px}
+.results{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:24px}
+.results[hidden]{display:none}
+.results h2{margin:0 0 10px;font-size:15px;font-weight:600;color:var(--muted)}
+.cand{display:flex;gap:12px;align-items:flex-start;padding:12px 0;border-top:1px solid var(--line);flex-wrap:wrap}
+.cand:first-of-type{border-top:0}
+.cand .bullet{font-size:30px;margin-top:2px}
+.cand-body{flex:1;min-width:180px}
+.cand-name{font-weight:700;font-size:17px}
+.meta{color:var(--muted);font-size:14px}
+.warn{color:var(--food);font-size:14px;font-weight:600}
+.cand .btn{align-self:center}
+
+.lists{display:grid;grid-template-columns:1fr 1fr;gap:24px}
+@media (max-width:720px){.lists{grid-template-columns:1fr}}
+.list-head{display:flex;align-items:center;gap:10px;border-bottom:3px solid var(--ink);padding-bottom:8px;margin-bottom:4px}
+.list-head .bullet{font-size:34px}
+.list-head h2{margin:0;font-size:22px;font-weight:800;letter-spacing:-.01em}
+.count{margin-left:auto;color:var(--muted);font-weight:600}
+.empty{color:var(--muted);font-size:15px;padding:14px 0}
+.hood{font-size:13px;font-weight:700;color:var(--muted);margin:16px 0 2px}
+.item{padding:10px 0;border-bottom:1px solid var(--line)}
+.item.down .item-main{opacity:.5}
+.item.down .item-name{text-decoration:line-through;text-decoration-thickness:1px}
+.item-top{display:flex;gap:10px;align-items:flex-start}
+.item-main{flex:1;min-width:0}
+.item-name{font-weight:700}
+.item-actions{display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:6px;font-size:14px}
+.reacts{display:flex;gap:4px;flex:none}
+.react{width:38px;height:34px;border:1px solid var(--line);border-radius:6px;background:var(--panel);
+  cursor:pointer;font-size:17px;line-height:1;display:grid;place-items:center;filter:grayscale(1);opacity:.6}
+.react:hover{opacity:1}
+.react[aria-pressed="true"]{filter:none;opacity:1;border-width:2px}
+.react.up[aria-pressed="true"]{border-color:var(--attr)}
+.react.dn[aria-pressed="true"]{border-color:var(--food)}
+.link{background:none;border:0;padding:0;color:var(--attr);font-weight:600;cursor:pointer;text-decoration:underline;text-underline-offset:2px}
+.link.danger{color:var(--food)}
+.other-wrap{margin-top:28px}
+.other-wrap[hidden]{display:none}
+.foot{margin-top:32px;color:var(--muted);font-size:13px;max-width:70ch}
+</style>
+</head>
+<body>
+<header class="sign">
+  <div class="sign-inner">
+    <h1>NYC trip list <span class="bullets" aria-hidden="true"><span class="bullet b-attr">A</span><span class="bullet b-food">R</span></span></h1>
+    <p>Type a place, pick the right match from Google Maps, and it lands in the right list.</p>
+    <form class="search" id="searchForm" autocomplete="off">
+      <label for="q" class="sr">Place name</label>
+      <input id="q" type="text" maxlength="200" placeholder="e.g. Katz's Deli, the High Line, Joe's Pizza" required>
+      <button class="btn btn-primary" id="lookBtn" type="submit">Look up</button>
+    </form>
+    <div class="status" id="status" role="status"></div>
+  </div>
+</header>
+
+<main>
+  <section class="results" id="results" hidden aria-live="polite">
+    <h2 id="resultsTitle">Matches</h2>
+    <div id="candList"></div>
+  </section>
+
+  <div class="lists">
+    <section>
+      <div class="list-head"><span class="bullet b-attr" aria-hidden="true">A</span><h2>Attractions</h2><span class="count" id="countAttr">0</span></div>
+      <div id="listAttr"><div class="empty">Loading…</div></div>
+    </section>
+    <section>
+      <div class="list-head"><span class="bullet b-food" aria-hidden="true">R</span><h2>Restaurants</h2><span class="count" id="countFood">0</span></div>
+      <div id="listFood"><div class="empty">Loading…</div></div>
+    </section>
+  </div>
+  <section class="other-wrap" id="otherWrap" hidden>
+    <div class="list-head"><span class="bullet b-other" aria-hidden="true">O</span><h2>Other</h2><span class="count" id="countOther">0</span></div>
+    <div id="listOther"></div>
+  </section>
+
+  <p class="foot">Anyone with this link can add places, react, and remove them. Changes show up live for everyone. Places are grouped by neighborhood, with thumbs-up spots first.</p>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script>
+(function(){
+  // Public client config. The anon key is meant to be public; access is controlled by row-level security.
+  const SUPABASE_URL = "https://jkehxprjvrivlzkgkvgw.supabase.co";
+  const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImprZWh4cHJqdnJpdmx6a2drdmd3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA5NTc4NjksImV4cCI6MjEwNjUzMzg2OX0.DfAHZ04gkjdrFKCMPyTrgIo7PYkHwFfYn0tmk8VNEhA";
+
+  const CATS = {
+    attraction:{label:"Attractions", cls:"b-attr", letter:"A"},
+    restaurant:{label:"Restaurants", cls:"b-food", letter:"R"},
+    other:{label:"Other", cls:"b-other", letter:"O"}
+  };
+  const $ = id => document.getElementById(id);
+  const statusEl = $("status");
+  let places = [];
+
+  if(!window.supabase){ statusEl.textContent = "Couldn't load the app. Check your connection and refresh."; return; }
+  const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+  function el(tag, cls, text){ const e=document.createElement(tag); if(cls) e.className=cls; if(text!=null) e.textContent=text; return e; }
+  function bullet(cat){ const c=CATS[cat]||CATS.other; const b=el("span","bullet "+c.cls,c.letter); b.setAttribute("aria-hidden","true"); return b; }
+  function normCat(c){ return c==="restaurant"||c==="attraction" ? c : "other"; }
+  function rank(p){ return p.reaction==="up"?0:p.reaction==="down"?2:1; }
+  function setStatus(t){ statusEl.textContent=t||""; }
+  function mapsUrl(p){
+    if(p.maps_url) return p.maps_url;
+    return "https://www.google.com/maps/search/?api=1&query="+encodeURIComponent([p.name,p.address||p.neighborhood,"New York"].filter(Boolean).join(", "));
+  }
+  function ratingText(p){
+    if(p.rating==null) return "";
+    return "★ "+Number(p.rating).toFixed(1)+(p.rating_count!=null?" ("+Number(p.rating_count).toLocaleString()+")":"");
+  }
+
+  // ---------- data ----------
+  async function load(){
+    const { data, error } = await sb.from("places").select("*").order("created_at");
+    if(error){ setStatus("Couldn't load the list. Refresh to try again."); return; }
+    places = data; render();
+  }
+
+  async function addPlace(p){
+    const rec = {
+      name:p.name, category:normCat(p.category), type:p.type||"", neighborhood:p.neighborhood||"",
+      address:p.address||"", google_place_id:p.google_place_id||null, maps_url:p.maps_url||null,
+      rating:p.rating??null, rating_count:p.rating_count??null
+    };
+    const { error } = await sb.from("places").insert(rec);
+    if(error){
+      if(error.code==="23505") setStatus(rec.name+" is already on the list.");
+      else if(/full/i.test(error.message||"")) setStatus("The list is full (500 places max). Remove some first.");
+      else setStatus("Couldn't add "+rec.name+". Try again.");
+      return false;
+    }
+    setStatus("Added "+rec.name+".");
+    await load();
+    return true;
+  }
+
+  async function setReaction(p, value){
+    const prev = p.reaction;
+    p.reaction = value; render();                     // optimistic
+    const { error } = await sb.from("places").update({ reaction:value }).eq("id", p.id);
+    if(error){ p.reaction = prev; render(); setStatus("Couldn't save that reaction."); }
+  }
+
+  async function removePlace(p){
+    const { error } = await sb.from("places").delete().eq("id", p.id);
+    if(error){ setStatus("Couldn't remove "+p.name+"."); return; }
+    places = places.filter(x=>x.id!==p.id); render();
+  }
+
+  // ---------- render ----------
+  function renderList(cat, container, countEl){
+    const items = places.filter(p=>normCat(p.category)===cat)
+      .sort((a,b)=>(a.neighborhood||"~").localeCompare(b.neighborhood||"~") || rank(a)-rank(b) || a.name.localeCompare(b.name));
+    countEl.textContent = items.length;
+    container.replaceChildren();
+    if(!items.length){
+      if(cat!=="other") container.append(el("div","empty", "No "+CATS[cat].label.toLowerCase()+" yet. Look one up above."));
+      return 0;
+    }
+    let lastHood=null;
+    for(const p of items){
+      const hood=p.neighborhood||"Neighborhood unknown";
+      if(hood!==lastHood){ container.append(el("div","hood",hood)); lastHood=hood; }
+      const row=el("div","item"+(p.reaction==="down"?" down":""));
+      const top=el("div","item-top");
+      const main=el("div","item-main");
+      main.append(el("div","item-name",p.name));
+      const bits=[p.type,ratingText(p),p.address].filter(Boolean);
+      if(bits.length) main.append(el("div","meta",bits.join(" · ")));
+      const reacts=el("div","reacts");
+      for(const [val,emoji,cls,label] of [["up","👍","up","Thumbs up"],["down","👎","dn","Thumbs down"]]){
+        const r=el("button","react "+cls,emoji); r.type="button";
+        const on=p.reaction===val;
+        r.setAttribute("aria-pressed",on?"true":"false");
+        r.setAttribute("aria-label",label+" for "+p.name);
+        r.title=label;
+        r.onclick=()=>setReaction(p, on?"":val);
+        reacts.append(r);
+      }
+      top.append(main,reacts);
+      row.append(top);
+      const act=el("div","item-actions");
+      const a=el("a","link","Open in Google Maps"); a.href=mapsUrl(p); a.target="_blank"; a.rel="noopener";
+      const rm=el("button","link danger","Remove"); rm.type="button"; rm.onclick=()=>removePlace(p);
+      act.append(a,rm);
+      row.append(act);
+      container.append(row);
+    }
+    return items.length;
+  }
+  function render(){
+    renderList("attraction",$("listAttr"),$("countAttr"));
+    renderList("restaurant",$("listFood"),$("countFood"));
+    $("otherWrap").hidden = renderList("other",$("listOther"),$("countOther"))===0;
+  }
+
+  // ---------- lookup ----------
+  function showCandidates(query, matches){
+    const box=$("candList"); box.replaceChildren();
+    $("results").hidden=false;
+    $("resultsTitle").textContent = matches.length ? "Pick the right one" : "No match found";
+    for(const m of matches){
+      const cat=normCat(m.category);
+      const row=el("div","cand");
+      row.append(bullet(cat));
+      const body=el("div","cand-body");
+      body.append(el("div","cand-name",m.name));
+      const bits=[m.type,ratingText(m),m.neighborhood,m.address].filter(Boolean);
+      if(bits.length) body.append(el("div","meta",bits.join(" · ")));
+      if(m.closed) body.append(el("div","warn","Permanently closed"));
+      else if(m.temporarily_closed) body.append(el("div","warn","Temporarily closed"));
+      row.append(body);
+      const add=el("button","btn btn-primary","Add"); add.type="button";
+      add.onclick=async()=>{ add.disabled=true; if(await addPlace(m)){ $("results").hidden=true; $("q").value=""; $("q").focus(); } else add.disabled=false; };
+      row.append(add);
+      box.append(row);
+    }
+    const manual=el("div","cand");
+    const mb=el("div","cand-body");
+    mb.append(el("div","meta",'Not it? Add "'+query+'" yourself:'));
+    manual.append(mb);
+    for(const c of ["attraction","restaurant"]){
+      const b=el("button","btn btn-ghost","As "+c); b.type="button";
+      b.onclick=async()=>{ if(await addPlace({name:query,category:c})){ $("results").hidden=true; $("q").value=""; } };
+      manual.append(b);
+    }
+    box.append(manual);
+  }
+
+  $("searchForm").addEventListener("submit", async (ev)=>{
+    ev.preventDefault();
+    const q=$("q").value.trim(); if(!q) return;
+    const btn=$("lookBtn"); btn.disabled=true; setStatus("Looking up "+q+"…");
+    try{
+      const { data, error } = await sb.functions.invoke("place-search", { body:{ query:q } });
+      if(error){
+        let code="";
+        try{ code=(await error.context.json()).error; }catch(e){}
+        setStatus(code==="missing_key" ? "Lookups aren't set up yet (Google API key missing). You can still add places by hand."
+                                       : "The lookup didn't go through. Try again or add it by hand.");
+        showCandidates(q,[]);
+        return;
+      }
+      const matches=(data&&data.matches)||[];
+      showCandidates(q,matches);
+      setStatus(matches.length ? "" : "Google Maps didn't find that. Check the spelling or add it by hand.");
+    }finally{ btn.disabled=false; }
+  });
+
+  // ---------- live updates ----------
+  let reloadTimer=null;
+  sb.channel("places-live")
+    .on("postgres_changes",{ event:"*", schema:"public", table:"places" },()=>{
+      clearTimeout(reloadTimer); reloadTimer=setTimeout(load,250);
+    })
+    .subscribe();
+
+  load();
+})();
+</script>
+</body>
+</html>
