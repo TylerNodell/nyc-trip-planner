@@ -39,7 +39,8 @@ button,input{font:inherit;color:inherit}
 .sign h1{margin:0;font-weight:800;font-size:clamp(30px,6vw,44px);letter-spacing:-.02em;line-height:1.05}
 .sign p{margin:6px 0 18px;color:#C9CDD1;font-size:15px}
 .bullets{display:inline-flex;gap:6px;vertical-align:middle;margin-left:10px}
-.bullet{width:1.1em;height:1.1em;border-radius:50%;display:inline-grid;place-items:center;
+/* line-height matches the circle so the letter sits dead center (page line-height pushed it down) */
+.bullet{width:1.1em;height:1.1em;border-radius:50%;display:inline-block;text-align:center;line-height:1.1em;vertical-align:middle;
   color:#fff;font-weight:800;font-size:.55em;flex:none}
 .b-attr{background:var(--attr)} .b-food{background:var(--food)} .b-loc{background:var(--loc)} .b-other{background:var(--other)}
 
