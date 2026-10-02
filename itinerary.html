@@ -61,8 +61,21 @@ main{max-width:1100px;margin:0 auto;padding:20px;display:grid;grid-template-colu
 .day-head{display:flex;align-items:baseline;gap:10px;margin:14px 0 4px}
 .day-head h3{margin:0;font-size:18px;font-weight:800}
 .day-head span{color:var(--muted);font-size:14px}
-.entry{display:grid;grid-template-columns:120px minmax(0,1fr);gap:12px;padding:10px 0;border-bottom:1px solid var(--line)}
-@media (max-width:480px){ .entry{grid-template-columns:88px minmax(0,1fr)} }
+.entry{display:grid;grid-template-columns:24px 112px minmax(0,1fr);gap:10px;padding:10px 0;border-bottom:1px solid var(--line)}
+@media (max-width:480px){ .entry{grid-template-columns:24px 80px minmax(0,1fr);gap:8px} }
+.handle{all:unset;box-sizing:border-box;width:24px;height:30px;display:grid;place-items:center;border-radius:5px;color:var(--muted);font-size:17px;line-height:1;cursor:grab;touch-action:none;user-select:none;-webkit-user-select:none}
+.handle:hover{background:var(--line);color:var(--ink)}
+.handle:focus-visible{outline:3px solid var(--focus);outline-offset:1px}
+.prow .handle{width:20px;margin-left:-4px}
+.drag-ghost{position:fixed;left:0;top:0;z-index:100;pointer-events:none;display:flex;gap:8px;align-items:center;max-width:300px;padding:8px 12px;background:var(--panel);color:var(--ink);border:2px solid var(--focus);border-radius:8px;box-shadow:0 12px 30px rgba(0,0,0,.28);font-weight:700;font-size:15px;transform:translate(-14px,-50%) rotate(-1.5deg)}
+.drag-ghost .bullet{font-size:20px}
+.drag-ghost span:last-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.drop-ph{border:2px dashed var(--focus);border-radius:8px;margin:6px 0;background:rgba(252,204,10,.12)}
+.dragging-src{display:none}
+body.is-dragging, body.is-dragging *{cursor:grabbing !important;user-select:none;-webkit-user-select:none}
+.day.drop-target .day-head h3{color:var(--ink)}
+.day-list:has(.drop-ph) .empty-note{display:none}
+.sort-time{font-size:13px;white-space:nowrap}
 .time{font-weight:700;font-size:14px;font-variant-numeric:tabular-nums;padding-top:2px}
 .time.anytime{color:var(--muted);font-weight:600}
 .entry-name{font-weight:700;display:flex;gap:8px;align-items:center}
@@ -117,7 +130,7 @@ main{max-width:1100px;margin:0 auto;padding:20px;display:grid;grid-template-colu
   <div class="sign-inner">
     <nav class="nav" aria-label="Pages"><a href="./">Places</a><a href="./itinerary.html" aria-current="page">Itinerary</a></nav>
     <h1>Itinerary</h1>
-    <p>Pick anything from the list, give it a day and time, and everyone sees the schedule update live.</p>
+    <p>Pick anything from the list, give it a day and time, and everyone sees the schedule update live. Drag the ⠿ handle to reorder or move things between days.</p>
     <div class="status" id="status" role="status"></div>
   </div>
 </header>
@@ -202,18 +215,18 @@ main{max-width:1100px;margin:0 auto;padding:20px;display:grid;grid-template-colu
   async function load(){
     const [pr, sr] = await Promise.all([
       sb.from("places").select("id,name,category,neighborhood,area,borough,lat,address,maps_url,reaction").order("created_at"),
-      sb.from("schedule_items").select("*").order("day").order("start_time",{nullsFirst:true}).order("created_at")
+      sb.from("schedule_items").select("*").order("day").order("position").order("start_time",{nullsFirst:true}).order("created_at")
     ]);
     if(pr.error || sr.error){ setStatus("Couldn't load everything. Refresh to try again."); return; }
     places = pr.data; items = sr.data;
     // Don't yank an editor out from under someone mid-typing; redraw when they're done.
-    if(document.activeElement && document.activeElement.closest && document.activeElement.closest(".editor")){ deferred=true; return; }
+    if(drag || (document.activeElement && document.activeElement.closest && document.activeElement.closest(".editor"))){ deferred=true; return; }
     if(open && open.key.startsWith("edit:") && !items.some(i=>"edit:"+i.id===open.key)) open=null;
     if(open && open.key.startsWith("new:") && !places.some(p=>"new:"+p.id===open.key)) open=null;
     render();
   }
   let timer=null, deferred=false;
-  document.addEventListener("focusout",()=>{ setTimeout(()=>{ if(deferred && !(document.activeElement&&document.activeElement.closest&&document.activeElement.closest(".editor"))){ deferred=false; render(); } },0); });
+  document.addEventListener("focusout",()=>{ setTimeout(()=>{ if(deferred && !drag && !(document.activeElement&&document.activeElement.closest&&document.activeElement.closest(".editor"))){ deferred=false; render(); } },0); });
   const reload=()=>{ clearTimeout(timer); timer=setTimeout(load,250); };
   sb.channel("itinerary-live")
     .on("postgres_changes",{event:"*",schema:"public",table:"schedule_items"},reload)
@@ -264,7 +277,43 @@ main{max-width:1100px;margin:0 auto;padding:20px;display:grid;grid-template-colu
     return box;
   }
 
+  // ---------- ordering ----------
+  function sortDay(list){
+    return [...list].sort((a,b)=>(a.position-b.position) || ((a.start_time||"")<(b.start_time||"")?-1:(a.start_time||"")>(b.start_time||"")?1:0) || (a.created_at<b.created_at?-1:1));
+  }
+  function dayItems(day, excludeId){ return items.filter(i=>i.day===day && i.id!==excludeId); }
+  // Where a new/edited item goes: among timed items by time, otherwise at the end of the day.
+  function chronoPosition(day, start, excludeId){
+    const list=sortDay(dayItems(day, excludeId));
+    if(!list.length) return 1;
+    if(start){
+      const s=start.length===5 ? start+":00" : start;
+      const idx=list.findIndex(i=>i.start_time && i.start_time>s);
+      if(idx===0) return list[0].position-1;
+      if(idx>0) return (list[idx-1].position+list[idx].position)/2;
+    }
+    return list[list.length-1].position+1;
+  }
+  // Renumber a day to match the given order; writes only rows that changed.
+  async function applyOrder(day, ids){
+    const ups=[];
+    ids.forEach((id,i)=>{
+      const it=items.find(x=>x.id===id); if(!it) return;
+      if(it.day!==day || it.position!==i+1){ it.day=day; it.position=i+1; ups.push(it); }
+    });
+    render();
+    if(!ups.length) return true;
+    const res=await Promise.all(ups.map(it=>sb.from("schedule_items").update({ day:it.day, position:it.position }).eq("id",it.id)));
+    if(res.some(r=>r.error)){ setStatus("Couldn't save the new order. Reloading."); await load(); return false; }
+    return true;
+  }
+  function placeRec(p){
+    return { place_id:p.id, name:p.name, category:["attraction","restaurant","location"].includes(p.category)?p.category:"other",
+      neighborhood:p.neighborhood||"", address:p.address||"", maps_url:p.maps_url||null };
+  }
+
   async function insertItem(rec){
+    if(rec.position==null) rec.position=chronoPosition(rec.day, rec.start_time, null);
     const { error } = await sb.from("schedule_items").insert(rec);
     if(error) return errMsg(error);
     setStatus("Scheduled "+rec.name+" on "+fmtDay(rec.day)+".");
@@ -279,7 +328,7 @@ main{max-width:1100px;margin:0 auto;padding:20px;display:grid;grid-template-colu
     for(const it of items){ if(!byDay.has(it.day)) byDay.set(it.day,[]); byDay.get(it.day).push(it); }
     const target=defaultDay();
     for(const day of [...byDay.keys()].sort()){
-      const list=byDay.get(day);
+      const list=sortDay(byDay.get(day));
       const sec=el("section","day"+(list.length?"":" is-empty")); sec.id="day-"+day;
       const head=el("div","day-head");
       head.append(el("h3","",fmtDay(day)));
@@ -297,7 +346,8 @@ main{max-width:1100px;margin:0 auto;padding:20px;display:grid;grid-template-colu
         head.append(pick);
       }
       sec.append(head);
-      if(!list.length){ sec.append(el("div","empty-note","Nothing planned yet")); wrap.append(sec); continue; }
+      const dl=el("div","day-list"); dl.dataset.day=day;
+      if(!list.length){ dl.append(el("div","empty-note","Nothing planned yet")); sec.append(dl); wrap.append(sec); continue; }
       const byId=new Map(places.map(p=>[p.id,p]));
       const dayAreas=[...new Set(list.map(i=>byId.get(i.place_id)&&byId.get(i.place_id).area).filter(Boolean))];
       if(dayAreas.length) sec.append(el("span","day-areas",(dayAreas.length===1?"Area: ":"Areas: ")+dayAreas.join(" → ")));
@@ -310,8 +360,21 @@ main{max-width:1100px;margin:0 auto;padding:20px;display:grid;grid-template-colu
         const clash = A.start_time===B.start_time || (A.start_time<bEnd && B.start_time<aEnd);
         if(clash){ overlaps.set(A.id,B.name); overlaps.set(B.id,A.name); }
       }
+      // flag timed items that sit earlier than something above them
+      const ooo=new Set(); let maxT="";
+      for(const it of list){ if(!it.start_time) continue; if(it.start_time<maxT) ooo.add(it.id); else maxT=it.start_time; }
+      if(ooo.size){
+        const st=el("button","link sort-time","Sort by time"); st.type="button";
+        st.onclick=()=>sortByTime(day);
+        head.append(st);
+      }
+      sec.append(dl);
       for(const it of list){
-        const row=el("div","entry");
+        const row=el("div","entry"); row.dataset.id=it.id;
+        const h=el("button","handle","⠿"); h.type="button"; h.title="Drag to move";
+        h.setAttribute("aria-label","Move "+it.name+". Drag, or use the up and down arrow keys.");
+        h.addEventListener("pointerdown",e=>startDrag(e,{ kind:"item", id:it.id, label:it.name, cat:it.category, src:row }));
+        h.addEventListener("keydown",e=>keyMove(e,it));
         const t=el("div","time"+(it.start_time?"":" anytime"),
           it.start_time ? fmtTime(it.start_time)+(it.end_time?" – "+fmtTime(it.end_time):"") : "Anytime");
         const body=el("div");
@@ -320,12 +383,15 @@ main{max-width:1100px;margin:0 auto;padding:20px;display:grid;grid-template-colu
         if(it.neighborhood||it.address) body.append(el("div","meta",[it.neighborhood,it.address].filter(Boolean).join(" · ")));
         if(it.note) body.append(el("div","note",it.note));
         if(overlaps.has(it.id)) body.append(el("div","warn","Overlaps with "+overlaps.get(it.id)));
+        if(ooo.has(it.id)) body.append(el("div","warn","Earlier than something above it"));
         const key="edit:"+it.id;
         if(open && open.key===key){
           body.append(editor({ key, title:"Edit "+it.name, withName:false, saveLabel:"Save",
             initial:{ day:it.day, start:hhmm(it.start_time), end:hhmm(it.end_time), note:it.note||"" },
             onSave:async(v)=>{
-              const { error } = await sb.from("schedule_items").update({ day:v.day, start_time:v.start_time, end_time:v.end_time, note:v.note }).eq("id",it.id);
+              const upd={ day:v.day, start_time:v.start_time, end_time:v.end_time, note:v.note };
+              if(v.day!==it.day || (v.start_time||"")!==hhmm(it.start_time)) upd.position=chronoPosition(v.day, v.start_time, it.id);
+              const { error } = await sb.from("schedule_items").update(upd).eq("id",it.id);
               if(error) return errMsg(error);
               setStatus("Updated "+it.name+"."); return true;
             }}));
@@ -341,7 +407,7 @@ main{max-width:1100px;margin:0 auto;padding:20px;display:grid;grid-template-colu
           };
           act.append(ed,a,rm); body.append(act);
         }
-        row.append(t,body); sec.append(row);
+        row.append(h,t,body); dl.append(row);
       }
       wrap.append(sec);
     }
@@ -393,7 +459,9 @@ main{max-width:1100px;margin:0 auto;padding:20px;display:grid;grid-template-colu
     for(const p of list){
       const item=el("div","pitem");
       const row=el("div","prow");
-      row.append(bullet(p.category));
+      const ph=el("span","handle","⠿"); ph.title="Drag onto a day"; ph.setAttribute("aria-hidden","true");
+      ph.addEventListener("pointerdown",e=>startDrag(e,{ kind:"place", id:p.id, label:p.name, cat:p.category, src:item }));
+      row.append(ph, bullet(p.category));
       const body=el("div","pbody");
       const nm=el("div","pname",p.name+(p.reaction==="up"?" 👍":""));
       const n=counts.get(p.id); if(n) nm.append(el("span","tag",n>1?"Scheduled ×"+n:"Scheduled"));
@@ -427,7 +495,141 @@ main{max-width:1100px;margin:0 auto;padding:20px;display:grid;grid-template-colu
   }
   $("customBtn").onclick=()=>openEditor("custom");
 
-  function render(){ renderSchedule(); renderPool(); renderCustom(); }
+  // ---------- drag and drop (pointer events: mouse, touch, pen) ----------
+  let drag=null;
+  function neighborEntry(node, dir){
+    let n=node[dir];
+    while(n && !(n.classList && n.classList.contains("entry") && !n.classList.contains("dragging-src"))) n=n[dir];
+    return n;
+  }
+  function startDrag(e, info){
+    if(drag || (e.pointerType==="mouse" && e.button!==0)) return;
+    e.preventDefault();
+    const r=info.src.getBoundingClientRect();
+    const ghost=el("div","drag-ghost"); ghost.append(bullet(info.cat), el("span","",info.label));
+    document.body.append(ghost);
+    const ph=el("div","drop-ph"); ph.style.height=Math.max(44, info.kind==="item" ? r.height-12 : 44)+"px";
+    drag={ ...info, ghost, ph, x:e.clientX, y:e.clientY, placed:false, raf:0 };
+    if(info.kind==="item"){
+      drag.origPrev=neighborEntry(info.src,"previousElementSibling");
+      drag.origNext=neighborEntry(info.src,"nextElementSibling");
+      drag.origDay=info.src.parentElement.dataset.day;
+      info.src.after(ph); info.src.classList.add("dragging-src"); drag.placed=true;
+    }
+    document.body.classList.add("is-dragging");
+    moveGhost(); placePh();
+    window.addEventListener("pointermove",onDragMove);
+    window.addEventListener("pointerup",onDragEnd);
+    window.addEventListener("pointercancel",onDragCancel);
+    window.addEventListener("keydown",onDragKey);
+    drag.raf=requestAnimationFrame(autoScroll);
+  }
+  function moveGhost(){ drag.ghost.style.left=drag.x+"px"; drag.ghost.style.top=drag.y+"px"; }
+  function onDragMove(e){ if(!drag) return; drag.x=e.clientX; drag.y=e.clientY; moveGhost(); placePh(); }
+  function placePh(){
+    const under=document.elementFromPoint(drag.x, drag.y);
+    const day=under && under.closest ? under.closest(".day") : null;
+    document.querySelectorAll(".day.drop-target").forEach(d=>{ if(d!==day) d.classList.remove("drop-target"); });
+    if(!day) return;
+    day.classList.add("drop-target");
+    const dl=day.querySelector(".day-list");
+    const entries=[...dl.children].filter(n=>n.classList.contains("entry") && !n.classList.contains("dragging-src"));
+    const before=entries.find(en=>{ const r=en.getBoundingClientRect(); return drag.y < r.top + r.height/2; });
+    if(before){ if(drag.ph.nextElementSibling!==before) dl.insertBefore(drag.ph, before); }
+    else if(dl.lastElementChild!==drag.ph) dl.append(drag.ph);
+    drag.placed=true;
+  }
+  function autoScroll(){
+    if(!drag) return;
+    const edge=70, h=window.innerHeight; let dy=0;
+    if(drag.y<edge) dy=-Math.ceil((edge-drag.y)/4);
+    else if(drag.y>h-edge) dy=Math.ceil((drag.y-(h-edge))/4);
+    if(dy){ window.scrollBy(0,dy); placePh(); }
+    drag.raf=requestAnimationFrame(autoScroll);
+  }
+  function endDragUI(){
+    cancelAnimationFrame(drag.raf);
+    drag.ghost.remove(); drag.ph.remove(); drag.src.classList.remove("dragging-src");
+    document.body.classList.remove("is-dragging");
+    document.querySelectorAll(".day.drop-target").forEach(d=>d.classList.remove("drop-target"));
+    window.removeEventListener("pointermove",onDragMove);
+    window.removeEventListener("pointerup",onDragEnd);
+    window.removeEventListener("pointercancel",onDragCancel);
+    window.removeEventListener("keydown",onDragKey);
+    drag=null;
+  }
+  function finishDeferred(){ if(deferred){ deferred=false; load(); } }
+  function onDragCancel(){ if(!drag) return; endDragUI(); render(); finishDeferred(); }
+  function onDragKey(e){ if(e.key==="Escape"){ e.preventDefault(); onDragCancel(); } }
+  async function onDragEnd(){
+    if(!drag) return;
+    const d=drag;
+    const dl=d.ph.parentElement;
+    if(!d.placed || !dl || !dl.classList.contains("day-list")){ endDragUI(); render(); finishDeferred(); return; }
+    const day=dl.dataset.day;
+    const prevEl=neighborEntry(d.ph,"previousElementSibling"), nextEl=neighborEntry(d.ph,"nextElementSibling");
+    const ids=[];
+    for(const n of dl.children){
+      if(n===d.ph) ids.push(d.kind==="item" ? d.id : "__new__");
+      else if(n.classList.contains("entry") && !n.classList.contains("dragging-src")) ids.push(n.dataset.id);
+    }
+    endDragUI();
+    if(d.kind==="item"){
+      const it=items.find(i=>i.id===d.id);
+      if(!it || (day===d.origDay && prevEl===d.origPrev && nextEl===d.origNext)){ render(); finishDeferred(); return; }
+      const fromDay=it.day;
+      if(await applyOrder(day, ids)) setStatus("Moved "+it.name+(fromDay!==day ? " to "+fmtDay(day) : "")+".");
+    }else{
+      const p=places.find(x=>x.id===d.id); if(!p){ render(); finishDeferred(); return; }
+      const idx=ids.indexOf("__new__");
+      render();
+      const { data, error } = await sb.from("schedule_items")
+        .insert({ ...placeRec(p), day, start_time:null, end_time:null, note:"", position:idx+1 }).select("*").single();
+      if(error){ setStatus(errMsg(error)); }
+      else{
+        items.push(data); ids[idx]=data.id;
+        lastDay=day;
+        if(await applyOrder(day, ids)) setStatus("Scheduled "+p.name+" on "+fmtDay(day)+". Use Change time to give it a time.");
+      }
+    }
+    finishDeferred();
+  }
+
+  // Keyboard: arrow keys on a handle move the item one slot, crossing into the next/previous day.
+  async function keyMove(e, it){
+    if(e.key!=="ArrowUp" && e.key!=="ArrowDown") return;
+    e.preventDefault();
+    const days=[...new Set([...tripDays(), ...items.map(i=>i.day)])].sort();
+    const ids=sortDay(dayItems(it.day)).map(i=>i.id);
+    const idx=ids.indexOf(it.id);
+    let day=it.day, order;
+    if(e.key==="ArrowUp"){
+      if(idx>0){ order=[...ids]; [order[idx-1],order[idx]]=[order[idx],order[idx-1]]; }
+      else{ const di=days.indexOf(it.day); if(di<=0) return; day=days[di-1]; order=[...sortDay(dayItems(day)).map(i=>i.id), it.id]; }
+    }else{
+      if(idx<ids.length-1){ order=[...ids]; [order[idx+1],order[idx]]=[order[idx],order[idx+1]]; }
+      else{ const di=days.indexOf(it.day); if(di>=days.length-1) return; day=days[di+1]; order=[it.id, ...sortDay(dayItems(day)).map(i=>i.id)]; }
+    }
+    const ok=await applyOrder(day, order);
+    const hnd=document.querySelector('.entry[data-id="'+it.id+'"] .handle');
+    if(hnd){ hnd.focus(); hnd.scrollIntoView({block:"nearest"}); }
+    if(ok) setStatus(it.name+": "+fmtDay(day)+", "+(order.indexOf(it.id)+1)+" of "+order.length+".");
+  }
+
+  async function sortByTime(day){
+    const list=sortDay(dayItems(day));
+    const timed=list.filter(i=>i.start_time).sort((a,b)=>a.start_time<b.start_time?-1:a.start_time>b.start_time?1:0);
+    let k=0; const order=list.map(i=>i.start_time ? timed[k++].id : i.id);   // "Anytime" items keep their slots
+    if(await applyOrder(day, order)) setStatus("Sorted "+fmtDay(day)+" by time.");
+  }
+
+  function render(){
+    // Keep keyboard focus on the same item's handle across redraws (live updates redraw everything).
+    const ae=document.activeElement;
+    const fid=ae && ae.classList && ae.classList.contains("handle") && ae.closest(".entry") ? ae.closest(".entry").dataset.id : null;
+    renderSchedule(); renderPool(); renderCustom();
+    if(fid){ const h=document.querySelector('.entry[data-id="'+fid+'"] .handle'); if(h) h.focus({preventScroll:true}); }
+  }
 
   load();
 })();
