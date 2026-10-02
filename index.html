@@ -4,6 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>NYC trip list</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#000000">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="NYC Trip">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🗽</text></svg>">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -112,7 +117,7 @@ main{max-width:980px;margin:0 auto;padding:20px}
 .foot{margin-top:32px;color:var(--muted);font-size:13px;max-width:70ch}
 </style>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
-<link rel="stylesheet" href="shared.css?v=202610022047">
+<link rel="stylesheet" href="shared.css?v=202610022117">
 </head>
 <body>
 <header class="sign">
@@ -171,8 +176,8 @@ main{max-width:980px;margin:0 auto;padding:20px}
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="shared.js?v=202610022047"></script>
-<script src="maps.js?v=202610022047"></script>
+<script src="shared.js?v=202610022117"></script>
+<script src="maps.js?v=202610022117"></script>
 <script>
 (function(){
   // Public client config. The anon key is meant to be public; access is controlled by row-level security.
@@ -585,6 +590,7 @@ main{max-width:980px;margin:0 auto;padding:20px}
     purge: async(r)=>{ T.ok(await sb.from("places").delete().eq("id",r.id)); }
   }));
 
+  T.onOnline(()=>load(true));   // catch up after being offline
   load().then(()=>{ T.maybeAskName(); setView(view); });
 })();
 </script>

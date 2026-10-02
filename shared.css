@@ -110,3 +110,7 @@
 .map-legend span{display:inline-flex;align-items:center;gap:5px}
 .map-legend i{display:inline-block;width:12px;height:12px;border-radius:50%}
 @media (prefers-color-scheme: dark){ .leaflet-tile-pane{filter:invert(1) hue-rotate(180deg) brightness(.9) contrast(.9)} }
+
+/* Offline banner */
+.offline-bar{position:sticky;top:0;z-index:300;background:#FCCC0A;color:#000;font-weight:700;font-size:14px;text-align:center;padding:calc(6px + env(safe-area-inset-top,0px)) 12px 6px}
+.offline-bar[hidden]{display:none}

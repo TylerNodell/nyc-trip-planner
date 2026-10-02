@@ -4,6 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>NYC itinerary</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#000000">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="NYC Trip">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🗽</text></svg>">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -146,7 +151,32 @@ body.is-dragging, body.is-dragging *{cursor:grabbing !important;user-select:none
 .book a{font-weight:600;margin-left:6px}
 .cost{font-size:13px;margin-top:2px}
 .booking-editor .row.two{grid-template-columns:1fr 1fr}
-.budget-btn{font-size:14px;margin-left:auto;margin-right:10px}
+.budget-btn{font-size:14px;margin-left:auto;margin-right:12px}
+.export-btn{font-size:14px;margin-right:12px}
+@media (max-width:480px){ .budget-btn,.export-btn{font-size:13px;margin-right:8px} }
+@media print{
+  @page{ margin:14mm }
+  :root{ --bg:#fff; --panel:#fff; --ink:#000; --muted:#444; --line:#bbb; padding:0 }
+  body{ background:#fff !important; color:#000 !important; font-size:11pt }
+  .sign,.pool,.pool-fab,.sheet-backdrop,.strip,.day-tools,.actions,.handle,.toast,.foot-links,.section-head,.offline-bar,
+  .dlg,.menu,.thread,.cmt-toggle,.editor,.byline,dialog{ display:none !important }
+  main{ display:block !important; padding:0 !important; max-width:none !important }
+  body[data-print] .day:not(.print-me){ display:none !important }
+  .day.is-empty{ display:none !important }
+  .day{ break-before:page; margin:0 0 10mm }
+  .day.print-first{ break-before:auto }
+  .day-head h3{ font-size:20pt; color:#000 !important }
+  .day-head span{ color:#444 }
+  .day-chips .dchip{ border-color:#999; color:#000 }
+  .entry{ grid-template-columns:24mm 1fr !important; gap:4mm !important; break-inside:avoid; border-color:#ccc; padding:3mm 0 !important }
+  .entry .time{ font-size:10.5pt }
+  .leg{ break-inside:avoid; color:#333; border-color:#999 }
+  .bullet{ -webkit-print-color-adjust:exact; print-color-adjust:exact }
+  .warn,.book.need{ color:#000 !important; font-weight:800 }
+  a{ color:#000 !important; text-decoration:none }
+  .day-map{ height:260px; break-inside:avoid; -webkit-print-color-adjust:exact; print-color-adjust:exact }
+  .leaflet-control-zoom{ display:none }
+}
 .bud{padding:14px 0;border-bottom:1px solid var(--line)}
 .bud h3{margin:0 0 8px;font-size:15px;font-weight:800}
 .bud-big{display:flex;gap:18px;flex-wrap:wrap}
@@ -219,7 +249,7 @@ body.is-dragging, body.is-dragging *{cursor:grabbing !important;user-select:none
 .foot{color:var(--muted);font-size:13px;margin-top:8px}
 </style>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
-<link rel="stylesheet" href="shared.css?v=202610022047">
+<link rel="stylesheet" href="shared.css?v=202610022117">
 </head>
 <body>
 <header class="sign">
@@ -233,7 +263,7 @@ body.is-dragging, body.is-dragging *{cursor:grabbing !important;user-select:none
 
 <main>
   <section aria-labelledby="schedHead">
-    <div class="section-head"><h2 id="schedHead">Schedule</h2><button class="link budget-btn" type="button" id="budgetBtn">💵 Budget &amp; bookings</button><span class="count" id="schedCount">0</span></div>
+    <div class="section-head"><h2 id="schedHead">Schedule</h2><button class="link budget-btn" type="button" id="budgetBtn">💵 Budget &amp; bookings</button><button class="link export-btn" type="button" id="exportBtn" aria-haspopup="menu">📤 Export</button><span class="count" id="schedCount">0</span></div>
     <div id="schedule"><div class="empty">Loading…</div></div>
     <div class="foot-links"><button class="link" type="button" id="trashBtn">Trash</button></div>
   </section>
@@ -260,8 +290,8 @@ body.is-dragging, body.is-dragging *{cursor:grabbing !important;user-select:none
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="shared.js?v=202610022047"></script>
-<script src="maps.js?v=202610022047"></script>
+<script src="shared.js?v=202610022117"></script>
+<script src="maps.js?v=202610022117"></script>
 <script>
 (function(){
   const SUPABASE_URL = "https://jkehxprjvrivlzkgkvgw.supabase.co";
@@ -525,7 +555,7 @@ body.is-dragging, body.is-dragging *{cursor:grabbing !important;user-select:none
       if(sm.costN) chips.append(el("span","dchip","💵 "+fmtUSD(sm.pp)+(sm.ppPartial?"+":"")+" per person"));
       if(sm.toBook) chips.append(el("span","dchip warn","🎟 "+sm.toBook+" to book"));
       sec.append(chips);
-      if(trip.legs.length) sec.append(dayTools(day, trip));
+      sec.append(dayTools(day, trip, list));
       if(trip.legs.length && openMaps.has(day)){ const mc=el("div","day-map"); mc.id="map-"+day; sec.append(mc); pendingMaps.push([day, mc, trip]); }
       // overlap detection among timed items
       const timed=list.filter(i=>i.start_time);
@@ -610,6 +640,7 @@ body.is-dragging, body.is-dragging *{cursor:grabbing !important;user-select:none
             ...(it.booking_status==="needed" ? [{ label:"Mark as booked", fn:()=>quickBooked(it) }] : []),
             { label: openThreads.has(it.id) ? "Hide comments" : ic.length ? "Comments ("+ic.length+")" : "Add a comment", fn:()=>toggleThread(it.id) },
             { label:"Open in Google Maps", fn:()=>window.open(mapsUrl(it),"_blank","noopener") },
+            { label:"Add to Google Calendar", fn:()=>window.open(googleCalUrl(it),"_blank","noopener") },
             "-",
             { label:"Remove", danger:true, fn:removeItem }
           ]});
@@ -1011,12 +1042,19 @@ body.is-dragging, body.is-dragging *{cursor:grabbing !important;user-select:none
     r.setAttribute("aria-label",(l.exact?"":"About ")+fmtDur(l.min)+" "+how+(l.fromHome?" from home":l.toHome?" back home":" to the next stop"));
     return r;
   }
-  function dayTools(day, trip){
+  function dayTools(day, trip, list){
     const row=el("div","day-tools");
+    const cal=el("button","link","📅 Calendar"); cal.type="button"; cal.dataset.focusKey="cal:"+day;
+    cal.title="Download this day as a calendar file";
+    cal.onclick=()=>downloadICS(list, "nyc-trip-"+day+".ics", "NYC trip · "+fmtDay(day));
+    const pr=el("button","link","🖨 Print"); pr.type="button"; pr.dataset.focusKey="print:"+day;
+    pr.onclick=()=>printDays([day]);
+    row.append(cal, pr);
+    if(!trip.legs.length) return row;
     const mb=el("button","link",openMaps.has(day)?"Hide map":"🗺 Map"); mb.type="button"; mb.dataset.focusKey="map:"+day;
     mb.setAttribute("aria-expanded",openMaps.has(day)?"true":"false");
     mb.onclick=()=>{ if(openMaps.has(day)) openMaps.delete(day); else openMaps.add(day); render(); };
-    row.append(mb);
+    row.prepend(mb);
     if(trip.exact){
       row.append(el("span","route-note","✓ Exact times from Google · "+T.ago(trip.saved.computed_at)));
     }else{
@@ -1381,6 +1419,114 @@ body.is-dragging, body.is-dragging *{cursor:grabbing !important;user-select:none
     try{ await sb.functions.invoke("place-search",{ body:{ refresh:ids } }); }catch(e){}   // updates arrive via live sync
   }
 
+  // ---------- calendar export ----------
+  // Parts of day / meals become sensible blocks; "Anytime" becomes an all-day event.
+  const CAL_SLOT={ breakfast:["08:00","09:00"], brunch:["11:00","12:30"], lunch:["12:30","13:30"], snack:["15:30","16:00"],
+    dinner:["19:00","20:30"], dessert:["21:00","21:45"], morning:["09:00","12:00"], afternoon:["13:00","17:00"], evening:["18:00","21:00"], night:["21:00","23:00"] };
+  function calTimes(it){
+    if(it.start_time){
+      const s=hhmm(it.start_time);
+      let e=it.end_time ? hhmm(it.end_time) : null;
+      if(!e){ const m=Math.min(toMin(s)+90, 1439); e=String(Math.floor(m/60)).padStart(2,"0")+":"+String(m%60).padStart(2,"0"); }
+      return { s, e };
+    }
+    if(it.slot && CAL_SLOT[it.slot]) return { s:CAL_SLOT[it.slot][0], e:CAL_SLOT[it.slot][1] };
+    return null;
+  }
+  function calTitle(it){ return it.name+(it.slot && !it.start_time && SLOT[it.slot] ? " ("+SLOT[it.slot].label+")" : ""); }
+  function calDetails(it){
+    const lines=[];
+    if(it.slot && !it.start_time && SLOT[it.slot]) lines.push(SLOT[it.slot].label+" (time is approximate)");
+    if(it.note) lines.push(it.note);
+    if(it.booking_status==="booked") lines.push("Booked"+(it.confirmation?" · confirmation "+it.confirmation:""));
+    else if(it.booking_status==="needed") lines.push("Still needs booking");
+    if(it.booking_url) lines.push("Reservation: "+it.booking_url);
+    if(it.cost!=null) lines.push("Cost: "+costText(it));
+    if(it.maps_url) lines.push("Map: "+it.maps_url);
+    lines.push("Trip planner: "+location.origin+location.pathname);
+    return lines.join("\n");
+  }
+  const ymdC=d=>d.replace(/-/g,"");
+  function icsEsc(s){ return String(s==null?"":s).replace(/\\/g,"\\\\").replace(/;/g,"\\;").replace(/,/g,"\\,").replace(/\r?\n/g,"\\n"); }
+  function icsFold(line){ const enc=new TextEncoder(); const out=[]; let cur=""; for(const ch of line){ if(enc.encode(cur+ch).length>74){ out.push(cur); cur=" "+ch; } else cur+=ch; } out.push(cur); return out.join("\r\n"); }
+  function buildICS(list, title){
+    const stamp=new Date().toISOString().replace(/[-:]/g,"").replace(/\.\d+/,"");
+    const L=["BEGIN:VCALENDAR","VERSION:2.0","PRODID:-//NYC Trip Planner//EN","CALSCALE:GREGORIAN","METHOD:PUBLISH",
+      "X-WR-CALNAME:"+icsEsc(title),"X-WR-TIMEZONE:America/New_York",
+      "BEGIN:VTIMEZONE","TZID:America/New_York",
+      "BEGIN:DAYLIGHT","TZOFFSETFROM:-0500","TZOFFSETTO:-0400","TZNAME:EDT","DTSTART:19700308T020000","RRULE:FREQ=YEARLY;BYMONTH=3;BYDAY=2SU","END:DAYLIGHT",
+      "BEGIN:STANDARD","TZOFFSETFROM:-0400","TZOFFSETTO:-0500","TZNAME:EST","DTSTART:19701101T020000","RRULE:FREQ=YEARLY;BYMONTH=11;BYDAY=1SU","END:STANDARD",
+      "END:VTIMEZONE"];
+    for(const it of list){
+      const t=calTimes(it);
+      L.push("BEGIN:VEVENT","UID:"+it.id+"@nyc-trip-planner","DTSTAMP:"+stamp);
+      if(t) L.push("DTSTART;TZID=America/New_York:"+ymdC(it.day)+"T"+t.s.replace(":","")+"00", "DTEND;TZID=America/New_York:"+ymdC(it.day)+"T"+t.e.replace(":","")+"00");
+      else L.push("DTSTART;VALUE=DATE:"+ymdC(it.day), "DTEND;VALUE=DATE:"+ymdC(addDays(it.day,1)), "TRANSP:TRANSPARENT");
+      L.push("SUMMARY:"+icsEsc(calTitle(it)));
+      if(it.address) L.push("LOCATION:"+icsEsc([it.name,it.address].filter(Boolean).join(", ")));
+      L.push("DESCRIPTION:"+icsEsc(calDetails(it)));
+      if(it.maps_url) L.push("URL:"+it.maps_url);
+      L.push("END:VEVENT");
+    }
+    L.push("END:VCALENDAR");
+    return L.map(icsFold).join("\r\n")+"\r\n";
+  }
+  function downloadICS(list, filename, title){
+    list=list.slice().sort((a,b)=>a.day<b.day?-1:a.day>b.day?1:a.position-b.position);
+    if(!list.length){ T.toast("Nothing scheduled to export yet."); return; }
+    const blob=new Blob([buildICS(list,title)],{ type:"text/calendar;charset=utf-8" });
+    const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=filename; document.body.append(a); a.click();
+    setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); },2000);
+    T.toast("Downloaded "+list.length+" event"+(list.length>1?"s":"")+". Open the file to add "+(list.length>1?"them":"it")+" to your calendar.");
+  }
+  function googleCalUrl(it){
+    const t=calTimes(it);
+    const dates = t ? ymdC(it.day)+"T"+t.s.replace(":","")+"00/"+ymdC(it.day)+"T"+t.e.replace(":","")+"00" : ymdC(it.day)+"/"+ymdC(addDays(it.day,1));
+    const q=new URLSearchParams({ action:"TEMPLATE", text:calTitle(it), dates, ctz:"America/New_York",
+      location:[it.name,it.address].filter(Boolean).join(", "), details:calDetails(it) });
+    return "https://calendar.google.com/calendar/render?"+q.toString();
+  }
+
+  // ---------- printing ----------
+  function printDays(days){
+    let first=true;
+    document.querySelectorAll(".day").forEach(d=>{
+      const on=(!days || days.includes(d.id.slice(4))) && !d.classList.contains("is-empty");
+      d.classList.toggle("print-me",on); d.classList.toggle("print-first", on && first); if(on) first=false;
+    });
+    if(first){ T.toast("Nothing scheduled to print yet."); return; }
+    document.body.dataset.print="1";
+    setTimeout(()=>window.print(),60);
+  }
+  window.addEventListener("afterprint",()=>{ delete document.body.dataset.print; document.querySelectorAll(".print-me,.print-first").forEach(x=>x.classList.remove("print-me","print-first")); });
+
+  // ---------- install / offline help ----------
+  let installPrompt=null;
+  window.addEventListener("beforeinstallprompt",e=>{ e.preventDefault(); installPrompt=e; });
+  const installDr=T.makeDrawer("Use it offline","Add the trip to your home screen. After it's opened once with a connection, your plan stays available without signal.");
+  async function showInstallHelp(){
+    if(installPrompt){ installPrompt.prompt(); const r=await installPrompt.userChoice.catch(()=>null); installPrompt=null; if(r && r.outcome==="accepted"){ T.toast("Installed. Open “NYC Trip” from your home screen."); return; } }
+    const L=installDr.list; L.replaceChildren();
+    for(const [h,t] of [["iPhone / iPad (Safari)","Tap the Share button, then “Add to Home Screen”."],
+                        ["Android (Chrome)","Tap ⋮ in the top corner, then “Install app” or “Add to Home screen”."],
+                        ["Computer (Chrome / Edge)","Click the install icon at the right end of the address bar."],
+                        ["Offline","Open the trip once while you have signal (this page and the Places page). After that it works underground; changes need a connection."]]){
+      const li=el("li","act"); li.append(el("b","",h), el("div","",t)); L.append(li);
+    }
+    installDr.d.showModal();
+  }
+
+  $("exportBtn").addEventListener("click",(e)=>{
+    const btn=e.currentTarget, r=btn.getBoundingClientRect();
+    T.openMenu({ title:"Take it with you", x:r.left, y:r.bottom+4, focusFirst:e.detail===0, returnTo:btn, items:[
+      { label:"📅 Whole trip → calendar file", fn:()=>downloadICS(items, "nyc-trip.ics", "NYC trip") },
+      { label:"🖨 Print the whole trip", fn:()=>printDays(null) },
+      "-",
+      { label:"📱 Use it offline / add to home screen", fn:showInstallHelp }
+    ]});
+  });
+
+  T.onOnline(()=>load(true));   // catch up after being offline
   load().then(()=>{ T.maybeAskName(); refreshHoursSoon(); });
 })();
 </script>

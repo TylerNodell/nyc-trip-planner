@@ -16,8 +16,22 @@
     return new Date(ts).toLocaleDateString(undefined,{month:"short",day:"numeric"});
   }
 
+  // Offline support: register the service worker (pages, trip data, and viewed map tiles keep working without signal).
+  if("serviceWorker" in navigator && location.protocol==="https:"){
+    navigator.serviceWorker.register("sw.js").catch(()=>{});
+  }
+
   window.TripShared = function(sb){
     const api = { el, ago };
+
+    // Offline banner
+    const off = el("div","offline-bar"); off.setAttribute("role","status");
+    off.textContent = "You're offline. Showing your last saved plan; changes will need a connection.";
+    document.body.prepend(off);
+    const paintOff = ()=>{ off.hidden = navigator.onLine; document.body.classList.toggle("is-offline", !navigator.onLine); };
+    paintOff();
+    window.addEventListener("online", paintOff); window.addEventListener("offline", paintOff);
+    api.onOnline = (fn)=>window.addEventListener("online", fn);
 
     // ---------- who you are (no accounts: a name you pick + a random id for this browser) ----------
     let id = ls.get(ID_KEY);
