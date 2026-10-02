@@ -93,6 +93,13 @@ body.is-dragging, body.is-dragging *{cursor:grabbing !important;user-select:none
 .pool .section-head h2{font-size:18px}
 .pool-tools{display:flex;justify-content:space-between;align-items:center;gap:10px;margin:8px 0 4px;font-size:14px;flex-wrap:wrap}
 .pool-tools label{display:flex;gap:6px;align-items:center;color:var(--muted)}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0 6px}
+.chip{display:inline-flex;align-items:center;gap:5px;padding:4px 10px 4px 6px;border:1px solid var(--line);border-radius:999px;background:var(--panel);color:var(--ink);font-size:13px;font-weight:600;cursor:pointer;line-height:1.2}
+.chip:hover{border-color:var(--ink)}
+.chip[aria-pressed="true"]{background:var(--ink);color:var(--panel);border-color:var(--ink)}
+.chip .bullet{font-size:15px}
+.chip .n{font-weight:500;opacity:.7}
+.chip.all{padding-left:10px}
 .pitem{padding:9px 0;border-bottom:1px solid var(--line)}
 .pitem:last-child{border-bottom:0}
 .area{margin-top:10px}
@@ -159,6 +166,7 @@ body.is-dragging, body.is-dragging *{cursor:grabbing !important;user-select:none
       <label><input type="checkbox" id="hideScheduled"> Hide scheduled</label>
       <button class="link" type="button" id="customBtn">+ Custom item</button>
     </div>
+    <div id="catFilter" class="chips" role="group" aria-label="Filter by category"></div>
     <div id="customSlot"></div>
     <div id="pool"><div class="empty">Loading…</div></div>
     <p class="foot">Grouped by area, south to north, so nearby spots sit together. 👎 places are left out. Add more places on the <a class="link" href="./">Places</a> page.</p>
@@ -175,6 +183,10 @@ body.is-dragging, body.is-dragging *{cursor:grabbing !important;user-select:none
   const CAT_ORDER = { attraction:0, restaurant:1, location:2, other:3 };
   const BORO_ORDER = { Manhattan:0, Brooklyn:1, Queens:2, Bronx:3, "Staten Island":4 };
   let collapsed = new Set();
+  let catSel = new Set();   // empty = all categories
+  try{ catSel = new Set(JSON.parse(localStorage.getItem("itin-cat-filter")||"[]")); }catch(e){}
+  const CAT_LABEL = { attraction:"Attractions", restaurant:"Restaurants", location:"Locations", other:"Other" };
+  function poolCat(p){ return CAT_LABEL[p.category] ? p.category : "other"; }
   try{ collapsed = new Set(JSON.parse(localStorage.getItem("itin-collapsed-areas")||"[]")); }catch(e){}
   const $ = id => document.getElementById(id);
   const statusEl = $("status");
@@ -456,12 +468,14 @@ body.is-dragging, body.is-dragging *{cursor:grabbing !important;user-select:none
     const counts=new Map();
     for(const it of items) if(it.place_id) counts.set(it.place_id,(counts.get(it.place_id)||0)+1);
     const rank=p=>p.reaction==="up"?0:1;
-    const list=places.filter(p=>p.reaction!=="down")
-      .filter(p=>!(hide && counts.get(p.id)))
+    const base=places.filter(p=>p.reaction!=="down").filter(p=>!(hide && counts.get(p.id)));
+    renderCatFilter(base);
+    const list=base.filter(p=>!catSel.size || catSel.has(poolCat(p)))
       .sort((a,b)=>rank(a)-rank(b) || (CAT_ORDER[a.category]??9)-(CAT_ORDER[b.category]??9) || a.name.localeCompare(b.name));
     $("poolCount").textContent=list.length;
     if(!list.length){
-      wrap.append(el("div","empty", places.length ? "Everything's scheduled." : "Your list is empty. Add places on the Places page first."));
+      wrap.append(el("div","empty", !places.length ? "Your list is empty. Add places on the Places page first."
+        : base.length ? "Nothing here for this filter." : "Everything's scheduled."));
       return;
     }
     // Group by area (community district), ordered by borough then south to north.
@@ -535,6 +549,33 @@ body.is-dragging, body.is-dragging *{cursor:grabbing !important;user-select:none
     }
   }
   $("customBtn").onclick=()=>openEditor("custom");
+
+  // ---------- category filter chips ----------
+  function renderCatFilter(base){
+    const box=$("catFilter"); box.replaceChildren();
+    const n={}; for(const p of base){ const c=poolCat(p); n[c]=(n[c]||0)+1; }
+    // drop selections for categories that no longer have anything
+    for(const c of [...catSel]) if(!n[c]) catSel.delete(c);
+    const save=()=>{ try{ localStorage.setItem("itin-cat-filter", JSON.stringify([...catSel])); }catch(e){} renderPool(); };
+    const all=el("button","chip all","All"); all.type="button";
+    all.setAttribute("aria-pressed", catSel.size?"false":"true");
+    all.onclick=()=>{ catSel.clear(); save(); };
+    box.append(all);
+    for(const c of ["attraction","restaurant","location","other"]){
+      if(!n[c]) continue;
+      const b=el("button","chip"); b.type="button"; b.dataset.cat=c;
+      b.append(bullet(c), el("span","",CAT_LABEL[c]), el("span","n",String(n[c])));
+      b.setAttribute("aria-pressed", catSel.has(c)?"true":"false");
+      b.onclick=()=>{
+        if(catSel.has(c)) catSel.delete(c); else catSel.add(c);
+        if(catSel.size===Object.keys(n).length) catSel.clear();   // everything picked = All
+        save();
+        const again=$("catFilter").querySelector('.chip[data-cat="'+c+'"]');
+        if(again) again.focus({preventScroll:true});
+      };
+      box.append(b);
+    }
+  }
 
   // ---------- jump from a "Scheduled" badge to the item on the schedule ----------
   const jumpNext=new Map();   // place id -> which occurrence to show next
