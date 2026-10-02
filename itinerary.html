@@ -51,7 +51,13 @@ main{max-width:1100px;margin:0 auto;padding:20px;display:grid;grid-template-colu
 .section-head h2{margin:0;font-size:22px;font-weight:800;letter-spacing:-.01em}
 .count{margin-left:auto;color:var(--muted);font-weight:600}
 
-.day{margin-bottom:26px}
+.day{margin-bottom:22px;scroll-margin-top:12px}
+.day.is-empty{margin-bottom:10px}
+.day.is-empty .day-head h3{color:var(--muted)}
+.empty-note{color:var(--muted);font-size:14px;padding:4px 0 10px;border-bottom:1px solid var(--line)}
+.day-pick{margin-left:auto;font-size:13px;white-space:nowrap}
+.day-target{margin-left:auto;font-size:12px;font-weight:700;color:#000;background:var(--focus);border-radius:999px;padding:1px 8px;white-space:nowrap}
+.outside{font-size:12px;font-weight:700;color:var(--food)}
 .day-head{display:flex;align-items:baseline;gap:10px;margin:14px 0 4px}
 .day-head h3{margin:0;font-size:18px;font-weight:800}
 .day-head span{color:var(--muted);font-size:14px}
@@ -152,6 +158,13 @@ main{max-width:1100px;margin:0 auto;padding:20px;display:grid;grid-template-colu
   // key: "new:<placeId>" | "edit:<itemId>" | "custom"
   let open = null;
   let lastDay = "";
+  // Trip window: every day in it gets a slot on the schedule.
+  const TRIP_START = "2026-12-18", TRIP_END = "2027-01-03";
+  function tripDays(){
+    const out=[]; const d=new Date(TRIP_START+"T12:00:00Z"), end=new Date(TRIP_END+"T12:00:00Z");
+    for(; d<=end; d.setUTCDate(d.getUTCDate()+1)) out.push(d.toISOString().slice(0,10));
+    return out;
+  }
 
   if(!window.supabase){ statusEl.textContent="Couldn't load the app. Check your connection and refresh."; return; }
   const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -178,7 +191,7 @@ main{max-width:1100px;margin:0 auto;padding:20px;display:grid;grid-template-colu
     if(p.maps_url) return p.maps_url;
     return "https://www.google.com/maps/search/?api=1&query="+encodeURIComponent([p.name,p.address||p.neighborhood,"New York"].filter(Boolean).join(", "));
   }
-  function defaultDay(){ return lastDay || (items.length ? items[items.length-1].day : todayNY()); }
+  function defaultDay(){ return lastDay || TRIP_START; }
   function errMsg(error){
     if(/full/i.test(error.message||"")) return "The schedule is full. Remove some items first.";
     if(error.code==="23514") return "End time has to be after the start time.";
@@ -262,13 +275,29 @@ main{max-width:1100px;margin:0 auto;padding:20px;display:grid;grid-template-colu
   function renderSchedule(){
     const wrap=$("schedule"); wrap.replaceChildren();
     $("schedCount").textContent=items.length;
-    if(!items.length){ wrap.append(el("div","empty","Nothing scheduled yet. Pick a place from your list to give it a day and time.")); return; }
-    const byDay=new Map();
+    const byDay=new Map(tripDays().map(d=>[d,[]]));
     for(const it of items){ if(!byDay.has(it.day)) byDay.set(it.day,[]); byDay.get(it.day).push(it); }
-    for(const [day, list] of byDay){
-      const sec=el("section","day");
-      const head=el("div","day-head"); head.append(el("h3","",fmtDay(day)), el("span","",list.length+(list.length===1?" item":" items")));
+    const target=defaultDay();
+    for(const day of [...byDay.keys()].sort()){
+      const list=byDay.get(day);
+      const sec=el("section","day"+(list.length?"":" is-empty")); sec.id="day-"+day;
+      const head=el("div","day-head");
+      head.append(el("h3","",fmtDay(day)));
+      if(list.length) head.append(el("span","",list.length+(list.length===1?" item":" items")));
+      if(day<TRIP_START || day>TRIP_END) head.append(el("span","outside","Outside trip dates"));
+      if(day===target){
+        head.append(el("span","day-target","New items go here"));
+      }else{
+        const pick=el("button","link day-pick","Plan this day"); pick.type="button";
+        pick.onclick=()=>{
+          lastDay=day; if(open && open.draft) open.draft.day=day; render();
+          setStatus("New items will go on "+fmtDay(day)+". Pick something from your list.");
+          if(window.matchMedia("(max-width:820px)").matches) document.querySelector(".pool").scrollIntoView({behavior:"smooth",block:"start"});
+        };
+        head.append(pick);
+      }
       sec.append(head);
+      if(!list.length){ sec.append(el("div","empty-note","Nothing planned yet")); wrap.append(sec); continue; }
       const byId=new Map(places.map(p=>[p.id,p]));
       const dayAreas=[...new Set(list.map(i=>byId.get(i.place_id)&&byId.get(i.place_id).area).filter(Boolean))];
       if(dayAreas.length) sec.append(el("span","day-areas",(dayAreas.length===1?"Area: ":"Areas: ")+dayAreas.join(" → ")));
