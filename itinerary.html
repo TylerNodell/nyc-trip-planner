@@ -76,6 +76,15 @@ main{max-width:1100px;margin:0 auto;padding:20px;display:grid;grid-template-colu
 .pool-tools label{display:flex;gap:6px;align-items:center;color:var(--muted)}
 .pitem{padding:9px 0;border-bottom:1px solid var(--line)}
 .pitem:last-child{border-bottom:0}
+.area{margin-top:10px}
+.area:first-child{margin-top:4px}
+.area > summary{list-style:none;cursor:pointer;display:flex;align-items:baseline;gap:8px;padding:8px 0 6px;border-bottom:2px solid var(--line)}
+.area > summary::-webkit-details-marker{display:none}
+.area > summary::before{content:"";width:0;height:0;border-left:5px solid var(--muted);border-top:4px solid transparent;border-bottom:4px solid transparent;transform:rotate(90deg);transition:transform .15s;align-self:center;flex:none}
+.area:not([open]) > summary::before{transform:none}
+.area-name{font-weight:800;font-size:15px}
+.area-meta{margin-left:auto;color:var(--muted);font-size:13px;white-space:nowrap}
+.day-areas{display:block;color:var(--muted);font-size:13px;margin:-2px 0 4px}
 .prow{display:flex;gap:10px;align-items:center}
 .prow .bullet{font-size:22px}
 .pbody{flex:1;min-width:0}
@@ -120,7 +129,7 @@ main{max-width:1100px;margin:0 auto;padding:20px;display:grid;grid-template-colu
     </div>
     <div id="customSlot"></div>
     <div id="pool"><div class="empty">Loading…</div></div>
-    <p class="foot">👎 places are left out. Add more places on the <a class="link" href="./">Places</a> page.</p>
+    <p class="foot">Grouped by area, south to north, so nearby spots sit together. 👎 places are left out. Add more places on the <a class="link" href="./">Places</a> page.</p>
   </aside>
 </main>
 
@@ -131,6 +140,10 @@ main{max-width:1100px;margin:0 auto;padding:20px;display:grid;grid-template-colu
   const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImprZWh4cHJqdnJpdmx6a2drdmd3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA5NTc4NjksImV4cCI6MjEwNjUzMzg2OX0.DfAHZ04gkjdrFKCMPyTrgIo7PYkHwFfYn0tmk8VNEhA";
 
   const CATS = { attraction:{cls:"b-attr",letter:"A"}, restaurant:{cls:"b-food",letter:"R"}, location:{cls:"b-loc",letter:"L"}, other:{cls:"b-other",letter:"O"} };
+  const CAT_ORDER = { attraction:0, restaurant:1, location:2, other:3 };
+  const BORO_ORDER = { Manhattan:0, Brooklyn:1, Queens:2, Bronx:3, "Staten Island":4 };
+  let collapsed = new Set();
+  try{ collapsed = new Set(JSON.parse(localStorage.getItem("itin-collapsed-areas")||"[]")); }catch(e){}
   const $ = id => document.getElementById(id);
   const statusEl = $("status");
   let places = [], items = [];
@@ -174,7 +187,7 @@ main{max-width:1100px;margin:0 auto;padding:20px;display:grid;grid-template-colu
   // ---------- data ----------
   async function load(){
     const [pr, sr] = await Promise.all([
-      sb.from("places").select("id,name,category,neighborhood,address,maps_url,reaction").order("created_at"),
+      sb.from("places").select("id,name,category,neighborhood,area,borough,lat,address,maps_url,reaction").order("created_at"),
       sb.from("schedule_items").select("*").order("day").order("start_time",{nullsFirst:true}).order("created_at")
     ]);
     if(pr.error || sr.error){ setStatus("Couldn't load everything. Refresh to try again."); return; }
@@ -255,6 +268,9 @@ main{max-width:1100px;margin:0 auto;padding:20px;display:grid;grid-template-colu
       const sec=el("section","day");
       const head=el("div","day-head"); head.append(el("h3","",fmtDay(day)), el("span","",list.length+(list.length===1?" item":" items")));
       sec.append(head);
+      const byId=new Map(places.map(p=>[p.id,p]));
+      const dayAreas=[...new Set(list.map(i=>byId.get(i.place_id)&&byId.get(i.place_id).area).filter(Boolean))];
+      if(dayAreas.length) sec.append(el("span","day-areas",(dayAreas.length===1?"Area: ":"Areas: ")+dayAreas.join(" → ")));
       // overlap detection among timed items
       const timed=list.filter(i=>i.start_time);
       const overlaps=new Map();
@@ -312,12 +328,38 @@ main{max-width:1100px;margin:0 auto;padding:20px;display:grid;grid-template-colu
     const rank=p=>p.reaction==="up"?0:1;
     const list=places.filter(p=>p.reaction!=="down")
       .filter(p=>!(hide && counts.get(p.id)))
-      .sort((a,b)=>rank(a)-rank(b) || (a.category===b.category?0:a.category==="attraction"?-1:1) || a.name.localeCompare(b.name));
+      .sort((a,b)=>rank(a)-rank(b) || (CAT_ORDER[a.category]??9)-(CAT_ORDER[b.category]??9) || a.name.localeCompare(b.name));
     $("poolCount").textContent=list.length;
     if(!list.length){
       wrap.append(el("div","empty", places.length ? "Everything's scheduled." : "Your list is empty. Add places on the Places page first."));
       return;
     }
+    // Group by area (community district), ordered by borough then south to north.
+    const groups=new Map();
+    for(const p of list){ const k=p.area||""; if(!groups.has(k)) groups.set(k,[]); groups.get(k).push(p); }
+    const avgLat=g=>{ const ls=g.map(p=>p.lat).filter(x=>typeof x==="number"); return ls.length? ls.reduce((a,b)=>a+b,0)/ls.length : 999; };
+    const ordered=[...groups.entries()].sort(([ka,ga],[kb,gb])=>{
+      if(!ka!==!kb) return ka?-1:1;                            // unknown area last
+      const ba=BORO_ORDER[ga[0].borough]??9, bb=BORO_ORDER[gb[0].borough]??9;
+      return ba-bb || avgLat(ga)-avgLat(gb);
+    });
+    for(const [area, group] of ordered){
+      const det=el("details","area"); det.open=!collapsed.has(area);
+      const sum=el("summary");
+      const sched=group.filter(p=>counts.get(p.id)).length;
+      sum.append(el("span","area-name",area||"Area unknown"),
+        el("span","area-meta",group.length+(group.length===1?" place":" places")+(sched?" · "+sched+" scheduled":"")));
+      det.append(sum);
+      det.addEventListener("toggle",()=>{
+        if(det.open) collapsed.delete(area); else collapsed.add(area);
+        try{ localStorage.setItem("itin-collapsed-areas", JSON.stringify([...collapsed])); }catch(e){}
+      });
+      renderPoolItems(det, group, counts);
+      wrap.append(det);
+    }
+  }
+
+  function renderPoolItems(wrap, list, counts){
     for(const p of list){
       const item=el("div","pitem");
       const row=el("div","prow");
@@ -326,7 +368,7 @@ main{max-width:1100px;margin:0 auto;padding:20px;display:grid;grid-template-colu
       const nm=el("div","pname",p.name+(p.reaction==="up"?" 👍":""));
       const n=counts.get(p.id); if(n) nm.append(el("span","tag",n>1?"Scheduled ×"+n:"Scheduled"));
       body.append(nm);
-      if(p.neighborhood) body.append(el("div","meta",p.neighborhood));
+      if(p.neighborhood && p.neighborhood!==p.area) body.append(el("div","meta",p.neighborhood));
       row.append(body);
       const key="new:"+p.id;
       if(!(open && open.key===key)){
