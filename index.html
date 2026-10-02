@@ -110,11 +110,12 @@ main{max-width:980px;margin:0 auto;padding:20px}
 .other-wrap[hidden]{display:none}
 .foot{margin-top:32px;color:var(--muted);font-size:13px;max-width:70ch}
 </style>
+<link rel="stylesheet" href="shared.css">
 </head>
 <body>
 <header class="sign">
   <div class="sign-inner">
-    <nav class="nav" aria-label="Pages"><a href="./" aria-current="page">Places</a><a href="./itinerary.html">Itinerary</a></nav>
+    <nav class="nav" aria-label="Pages"><a href="./" aria-current="page">Places</a><a href="./itinerary.html">Itinerary</a><span class="nav-right"><button id="activityBtn" class="nav-btn" type="button">Activity</button><button id="whoBtn" class="nav-btn" type="button">👤</button></span></nav>
     <h1>NYC trip list <span class="bullets" aria-hidden="true"><span class="bullet b-attr">A</span><span class="bullet b-food">R</span><span class="bullet b-loc">L</span></span></h1>
     <p>Type a place or paste a Google Maps link, pick the right match, and it lands in the right list.</p>
     <form class="search" id="searchForm" autocomplete="off">
@@ -151,10 +152,12 @@ main{max-width:980px;margin:0 auto;padding:20px}
     <div id="listOther"></div>
   </section>
 
-  <p class="foot">Anyone with this link can add places, react, and remove them. Changes show up live for everyone. Places are grouped by neighborhood, with thumbs-up spots first. Right-click a place (or tap More) to move it, write your own description, or remove it.</p>
+  <p class="foot">Anyone with this link can add, vote on, comment on, and remove places. Changes show up live for everyone. Places are grouped by neighborhood, with the best-voted spots first. Right-click a place (or tap More) to move it, write your own description, or remove it. Removed places go to the trash and can be restored.</p>
+  <div class="foot-links"><button class="link" type="button" id="trashBtn">Trash</button></div>
 </main>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script src="shared.js"></script>
 <script>
 (function(){
   // Public client config. The anon key is meant to be public; access is controlled by row-level security.
@@ -169,17 +172,20 @@ main{max-width:980px;margin:0 auto;padding:20px}
   };
   const $ = id => document.getElementById(id);
   const statusEl = $("status");
-  let places = [];
+  let places = [], votes = [], comments = [];
+  let tally = ()=>({ up:0, down:0, upNames:[], downNames:[], mine:0, legacy:false });
+  const openThreads = new Set();
   let editing = null;   // {id, draft, fresh} for the description editor; survives live re-renders
   let deferred = false;
 
   if(!window.supabase){ statusEl.textContent = "Couldn't load the app. Check your connection and refresh."; return; }
   const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  const T = TripShared(sb);
 
   function el(tag, cls, text){ const e=document.createElement(tag); if(cls) e.className=cls; if(text!=null) e.textContent=text; return e; }
   function bullet(cat){ const c=CATS[cat]||CATS.other; const b=el("span","bullet "+c.cls,c.letter); b.setAttribute("aria-hidden","true"); return b; }
   function normCat(c){ return c==="restaurant"||c==="attraction"||c==="location" ? c : "other"; }
-  function rank(p){ return p.reaction==="up"?0:p.reaction==="down"?2:1; }
+  function score(p){ const t=tally(p.id); return t.up-t.down; }
   function setStatus(t){ statusEl.textContent=t||""; }
   function mapsUrl(p){
     if(p.maps_url) return p.maps_url;
@@ -188,7 +194,7 @@ main{max-width:980px;margin:0 auto;padding:20px}
   function appendSummary(parent,p){
     if(p.description){
       parent.append(el("div","desc",p.description));
-      parent.append(el("div","ai-note","Custom description"));
+      parent.append(el("div","ai-note", p.description_by ? "Description by "+p.description_by : "Custom description"));
       return;
     }
     if(!p.summary) return;
@@ -202,17 +208,22 @@ main{max-width:980px;margin:0 auto;padding:20px}
   }
 
   // ---------- data ----------
-  async function load(){
-    const { data, error } = await sb.from("places").select("*").order("created_at");
-    if(error){ setStatus("Couldn't load the list. Refresh to try again."); return; }
-    places = data;
+  async function load(force){
+    const [pr, vr, cr] = await Promise.all([
+      sb.from("places").select("*").is("deleted_at", null).order("created_at"),
+      sb.from("votes").select("place_id,voter_id,voter_name,value"),
+      sb.from("comments").select("*").not("place_id","is",null)
+    ]);
+    if(pr.error){ setStatus("Couldn't load the list. Refresh to try again."); return; }
+    places = pr.data; votes = vr.data||[]; comments = cr.data||[];
+    tally = T.tally(votes);
     if(editing && !places.some(x=>x.id===editing.id)) editing=null;
-    // Don't redraw under someone mid-typing; catch up when they leave the editor.
-    if(document.activeElement && document.activeElement.closest && document.activeElement.closest(".desc-editor")){ deferred=true; return; }
+    // Don't redraw under someone mid-typing; catch up when they leave the field.
+    if(!force && T.busyTyping()){ deferred=true; return; }
     render();
   }
   document.addEventListener("focusout",()=>{ setTimeout(()=>{
-    if(deferred && !(document.activeElement&&document.activeElement.closest&&document.activeElement.closest(".desc-editor"))){ deferred=false; render(); }
+    if(deferred && !T.busyTyping()){ deferred=false; render(); }
   },0); });
 
   async function addPlace(p){
@@ -221,9 +232,9 @@ main{max-width:980px;margin:0 auto;padding:20px}
       address:p.address||"", google_place_id:p.google_place_id||null, maps_url:p.maps_url||null,
       rating:p.rating??null, rating_count:p.rating_count??null,
       summary:(p.summary||"").slice(0,1000), summary_ai:!!p.summary_ai,
-      lat:p.lat??null, lng:p.lng??null
+      lat:p.lat??null, lng:p.lng??null, ...T.byNew()
     };
-    const { error } = await sb.from("places").insert(rec);
+    const { data:ins, error } = await sb.from("places").insert(rec).select("id").single();
     if(error){
       if(error.code==="23505") setStatus(rec.name+" is already on the list.");
       else if(/full/i.test(error.message||"")) setStatus("The list is full (500 places max). Remove some first.");
@@ -231,39 +242,61 @@ main{max-width:980px;margin:0 auto;padding:20px}
       return false;
     }
     setStatus("Added "+rec.name+".");
+    T.toast("Added "+rec.name+" to "+CATS[rec.category].label+".", async()=>{ T.ok(await sb.from("places").delete().eq("id",ins.id)); await load(true); });
     await load();
     return true;
   }
 
-  async function setReaction(p, value){
-    const prev = p.reaction;
-    p.reaction = value; render();                     // optimistic
-    const { error } = await sb.from("places").update({ reaction:value }).eq("id", p.id);
-    if(error){ p.reaction = prev; render(); setStatus("Couldn't save that reaction."); }
+  async function castVote(p, value){
+    const before = votes.slice();
+    votes = votes.filter(v=>!(v.place_id===p.id && v.voter_id===T.id));        // optimistic
+    if(value) votes.push({ place_id:p.id, voter_id:T.id, voter_name:T.rawName(), value });
+    tally = T.tally(votes); render();
+    const { error } = await T.vote(p.id, value);
+    if(error){ votes = before; tally = T.tally(votes); render(); setStatus("Couldn't save that vote."); }
+  }
+  async function clearLegacyVotes(p){
+    const { error } = await sb.from("votes").delete().eq("place_id",p.id).eq("voter_id","legacy");
+    if(error) setStatus("Couldn't clear those votes."); else await load(true);
   }
 
   async function removePlace(p){
-    const { error } = await sb.from("places").delete().eq("id", p.id);
+    const { error } = await sb.from("places").update({ deleted_at:new Date().toISOString(), ...T.by() }).eq("id", p.id);
     if(error){ setStatus("Couldn't remove "+p.name+"."); return; }
     places = places.filter(x=>x.id!==p.id); render();
     setStatus("Removed "+p.name+".");
+    T.toast("Removed "+p.name+".", async()=>{
+      T.ok(await sb.from("places").update({ deleted_at:null, ...T.by() }).eq("id", p.id));
+      await load(true);
+    });
   }
 
   async function movePlace(p, cat){
     const prev = p.category;
     p.category = cat; render();                       // optimistic
-    const { error } = await sb.from("places").update({ category:cat }).eq("id", p.id);
+    const { error } = await sb.from("places").update({ category:cat, ...T.by() }).eq("id", p.id);
     if(error){ p.category = prev; render(); setStatus("Couldn't move "+p.name+"."); return; }
     setStatus("Moved "+p.name+" to "+CATS[cat].label+".");
+    T.toast("Moved "+p.name+" to "+CATS[cat].label+".", async()=>{
+      T.ok(await sb.from("places").update({ category:prev, ...T.by() }).eq("id", p.id));
+      p.category = prev; render();
+    });
   }
 
   async function saveDescription(p, text){
     text = (text||"").trim().slice(0,500);
     if(text === (p.summary||"").trim()) text = "";   // unchanged from Google's = no custom description
-    const { error } = await sb.from("places").update({ description:text }).eq("id", p.id);
+    const prev = { description:p.description||"", description_by:p.description_by||"" };
+    const upd = { description:text, description_by: text ? T.rawName() : "", ...T.by() };
+    const { error } = await sb.from("places").update(upd).eq("id", p.id);
     if(error){ setStatus("Couldn't save that description."); return false; }
-    p.description = text; editing = null; render();
-    setStatus(text ? "Saved the description for "+p.name+"." : "Reset "+p.name+" to Google's description.");
+    Object.assign(p, upd); editing = null; render();
+    const msg = text ? "Saved the description for "+p.name+"." : "Reset "+p.name+" to Google's description.";
+    setStatus(msg);
+    T.toast(msg, async()=>{
+      T.ok(await sb.from("places").update({ ...prev, ...T.by() }).eq("id", p.id));
+      Object.assign(p, prev); render();
+    });
     return true;
   }
 
@@ -314,6 +347,8 @@ main{max-width:980px;margin:0 auto;padding:20px}
       editing={ id:p.id, draft:p.description||p.summary||"", fresh:true }; render();
     });
     if(p.description) menuItem(p.summary ? "Reset to Google's description" : "Clear description", ()=>saveDescription(p,""));
+    menuItem(openThreads.has(p.id) ? "Hide comments" : "Comments", ()=>toggleThread(p.id));
+    if(tally(p.id).legacy) menuItem("Clear earlier votes", ()=>clearLegacyVotes(p));
     menu.append(el("hr"));
     menuItem("Open in Google Maps", ()=>window.open(mapsUrl(p),"_blank","noopener"));
     menuItem("Remove", ()=>removePlace(p), "danger");
@@ -341,7 +376,7 @@ main{max-width:980px;margin:0 auto;padding:20px}
   // ---------- render ----------
   function renderList(cat, container, countEl){
     const items = places.filter(p=>normCat(p.category)===cat)
-      .sort((a,b)=>(a.neighborhood||"~").localeCompare(b.neighborhood||"~") || rank(a)-rank(b) || a.name.localeCompare(b.name));
+      .sort((a,b)=>(a.neighborhood||"~").localeCompare(b.neighborhood||"~") || score(b)-score(a) || a.name.localeCompare(b.name));
     countEl.textContent = items.length;
     container.replaceChildren();
     if(!items.length){
@@ -352,32 +387,42 @@ main{max-width:980px;margin:0 auto;padding:20px}
     for(const p of items){
       const hood=p.neighborhood||"Neighborhood unknown";
       if(hood!==lastHood){ container.append(el("div","hood",hood)); lastHood=hood; }
-      const row=el("div","item"+(p.reaction==="down"?" down":""));
+      const t=tally(p.id);
+      const row=el("div","item"+(t.down>t.up?" down":""));
       const top=el("div","item-top");
       const main=el("div","item-main");
       main.append(el("div","item-name",p.name));
       const bits=[p.type,ratingText(p),p.address].filter(Boolean);
       if(bits.length) main.append(el("div","meta",bits.join(" · ")));
       appendSummary(main,p);
+      if(p.created_by) main.append(el("div","byline","Added by "+p.created_by));
       const reacts=el("div","reacts");
-      for(const [val,emoji,cls,label] of [["up","👍","up","Thumbs up"],["down","👎","dn","Thumbs down"]]){
-        const r=el("button","react "+cls,emoji); r.type="button";
-        const on=p.reaction===val;
+      for(const [val,emoji,cls,label,n,names] of [[1,"👍","up","Thumbs up",t.up,t.upNames],[-1,"👎","dn","Thumbs down",t.down,t.downNames]]){
+        const r=el("button","react "+cls); r.type="button";
+        r.append(el("span","",emoji)); if(n) r.append(el("span","vc",String(n)));
+        const on=t.mine===val;
         r.setAttribute("aria-pressed",on?"true":"false");
-        r.setAttribute("aria-label",label+" for "+p.name);
-        r.title=label;
-        r.onclick=()=>setReaction(p, on?"":val);
+        r.setAttribute("aria-label",label+" for "+p.name+(n?" ("+n+": "+names.join(", ")+")":""));
+        r.title=n ? label+": "+names.join(", ") : label;
+        r.dataset.focusKey="vote:"+p.id+":"+val;
+        r.onclick=()=>castVote(p, on?0:val);
         reacts.append(r);
       }
       top.append(main,reacts);
       row.append(top);
       if(editing && editing.id===p.id) row.append(descEditor(p));
+      const pc=comments.filter(c=>c.place_id===p.id);
+      if(openThreads.has(p.id)) row.append(T.thread({ key:"p:"+p.id, comments:pc, target:{ place_id:p.id }, label:p.name, onChange:()=>load(true) }));
       const act=el("div","item-actions");
       const a=el("a","link","Open in Google Maps"); a.href=mapsUrl(p); a.target="_blank"; a.rel="noopener";
+      const cm=el("button","link cmt-toggle", openThreads.has(p.id) ? "Hide comments" : pc.length ? "💬 "+pc.length+(pc.length===1?" comment":" comments") : "Comment");
+      cm.type="button"; cm.setAttribute("aria-expanded", openThreads.has(p.id)?"true":"false");
+      cm.dataset.focusKey="cmt:"+p.id;
+      cm.onclick=()=>toggleThread(p.id);
       const more=el("button","link","More"); more.type="button";
       more.setAttribute("aria-haspopup","menu"); more.setAttribute("aria-label","More options for "+p.name);
       more.onclick=(e)=>{ const r=more.getBoundingClientRect(); openMenu(p, r.left, r.bottom+4, e.detail===0, more); };
-      act.append(a,more);
+      act.append(a,cm,more);
       row.append(act);
       row.addEventListener("contextmenu",(e)=>{
         if(e.target.closest(".desc-editor")) return;      // keep the normal menu for copy/paste while typing
@@ -390,7 +435,13 @@ main{max-width:980px;margin:0 auto;padding:20px}
     }
     return items.length;
   }
-  function render(){
+  function toggleThread(id){
+    if(openThreads.has(id)) openThreads.delete(id); else openThreads.add(id);
+    render();
+    if(openThreads.has(id)){ const t=document.querySelector('[data-focus-key="thread:p:'+id+'"]'); if(t) t.focus(); }
+  }
+  function render(){ T.preserveFocus(renderAll); }
+  function renderAll(){
     renderList("attraction",$("listAttr"),$("countAttr"));
     renderList("restaurant",$("listFood"),$("countFood"));
     renderList("location",$("listLoc"),$("countLoc"));
@@ -460,13 +511,24 @@ main{max-width:980px;margin:0 auto;padding:20px}
 
   // ---------- live updates ----------
   let reloadTimer=null;
+  const kick=()=>{ clearTimeout(reloadTimer); reloadTimer=setTimeout(()=>load(),250); };
   sb.channel("places-live")
-    .on("postgres_changes",{ event:"*", schema:"public", table:"places" },()=>{
-      clearTimeout(reloadTimer); reloadTimer=setTimeout(load,250);
-    })
+    .on("postgres_changes",{ event:"*", schema:"public", table:"places" },kick)
+    .on("postgres_changes",{ event:"*", schema:"public", table:"votes" },kick)
+    .on("postgres_changes",{ event:"*", schema:"public", table:"comments" },kick)
     .subscribe();
 
-  load();
+  $("trashBtn").addEventListener("click",()=>T.openTrash({
+    load: async()=>{
+      const { data, error } = await sb.from("places").select("id,name,category,neighborhood,deleted_at,updated_by").not("deleted_at","is",null).order("deleted_at",{ascending:false});
+      if(error) throw error;
+      return data.map(r=>({ ...r, sub:[CATS[normCat(r.category)].label, r.neighborhood].filter(Boolean).join(" · "), by:r.updated_by }));
+    },
+    restore: async(r)=>{ T.ok(await sb.from("places").update({ deleted_at:null, ...T.by() }).eq("id",r.id)); await load(true); },
+    purge: async(r)=>{ T.ok(await sb.from("places").delete().eq("id",r.id)); }
+  }));
+
+  load().then(()=>T.maybeAskName());
 })();
 </script>
 </body>

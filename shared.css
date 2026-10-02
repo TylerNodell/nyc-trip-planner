@@ -1,0 +1,72 @@
+/* Shared UI: header buttons, dialogs/drawers, toast, comments, votes, trash. Uses each page's color tokens. */
+
+/* Header: your name + activity */
+.nav{align-items:center}
+.nav-right{margin-left:auto;display:flex;gap:16px;align-items:center}
+.nav-btn{all:unset;cursor:pointer;color:#C9CDD1;font-weight:700;font-size:15px;padding-bottom:3px;border-bottom:3px solid transparent;white-space:nowrap;max-width:46vw;overflow:hidden;text-overflow:ellipsis}
+.nav-btn:hover{color:#fff}
+.nav-btn:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
+
+/* Dialogs */
+.dlg{border:0;border-radius:12px;padding:0;background:var(--panel);color:var(--ink);box-shadow:0 20px 50px rgba(0,0,0,.35);max-width:min(440px,calc(100vw - 32px))}
+.dlg::backdrop{background:rgba(0,0,0,.45)}
+.dlg-body{padding:20px;display:grid;gap:12px}
+.dlg-body h2{margin:0;font-size:20px;font-weight:800}
+.dlg-body p{margin:0;color:var(--muted);font-size:14px}
+.dlg-body input{padding:10px 12px;border:2px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink);font:inherit;font-size:16px}
+.dlg-body input:focus{border-color:var(--focus);outline:none}
+.dlg-btns{display:flex;gap:8px}
+
+/* Side drawer (activity, trash) */
+.drawer{margin:0 0 0 auto;height:100%;max-height:100%;width:min(420px,100vw);max-width:100vw;border-radius:0;padding:0 0 env(safe-area-inset-bottom,0px)}
+.drawer[open]{display:flex;flex-direction:column}
+.drawer-head{display:flex;align-items:center;justify-content:space-between;padding:calc(14px + env(safe-area-inset-top,0px)) 18px 12px;border-bottom:3px solid var(--ink)}
+.drawer-head h2{margin:0;font-size:22px;font-weight:800}
+.drawer-close{all:unset;cursor:pointer;width:34px;height:34px;display:grid;place-items:center;border-radius:6px;font-size:18px;color:var(--muted)}
+.drawer-close:hover{background:var(--bg);color:var(--ink)}
+.drawer-close:focus-visible{outline:3px solid var(--focus)}
+.drawer-note{margin:10px 18px 0;color:var(--muted);font-size:13px}
+.drawer-list{list-style:none;margin:0;padding:6px 18px 18px;overflow:auto;flex:1}
+.drawer-empty{color:var(--muted);padding:14px 0}
+.act{padding:10px 0;border-bottom:1px solid var(--line);font-size:14px}
+.act-line{line-height:1.4}
+.act-time{color:var(--muted);font-size:12px;margin-top:2px}
+.trash-row{display:flex;gap:10px;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--line)}
+.trash-name{font-weight:700}
+.trash-info{min-width:0}
+.trash-btns{display:flex;gap:6px;flex:none}
+.danger-text{color:var(--food) !important}
+
+/* Toast */
+.toast{position:fixed;left:50%;bottom:calc(18px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);z-index:200;display:flex;align-items:center;gap:12px;max-width:calc(100vw - 24px);padding:10px 10px 10px 16px;background:#000;color:#fff;border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,.35);font-size:15px}
+.toast[hidden]{display:none}
+.toast.show{animation:toast-in .18s ease-out}
+@keyframes toast-in{from{opacity:0;transform:translate(-50%,8px)}to{opacity:1;transform:translate(-50%,0)}}
+.toast-msg{overflow:hidden;text-overflow:ellipsis}
+.toast-undo{all:unset;cursor:pointer;color:#000;background:var(--focus);font-weight:800;padding:6px 12px;border-radius:6px;white-space:nowrap}
+.toast-undo:focus-visible{outline:2px solid #fff;outline-offset:2px}
+.toast-x{all:unset;cursor:pointer;color:#9BA2A8;width:28px;height:28px;display:grid;place-items:center;border-radius:6px}
+.toast-x:hover{color:#fff}
+
+/* Votes */
+.react{width:auto !important;min-width:38px;padding:0 8px;gap:4px;display:inline-flex !important;align-items:center;justify-content:center}
+.react .vc{font-size:13px;font-weight:700;color:var(--ink);filter:none}
+.react[aria-pressed="false"] .vc{color:var(--muted)}
+.legacy-note{font-size:12px;color:var(--muted)}
+
+/* Comments */
+.cmt-toggle{white-space:nowrap}
+.thread{margin-top:8px;padding:8px 10px;border-left:3px solid var(--focus);background:var(--panel);border-radius:0 6px 6px 0;display:grid;gap:8px;max-width:60ch}
+.cmt{font-size:14px}
+.cmt-head{display:flex;gap:8px;align-items:baseline}
+.cmt-time{color:var(--muted);font-size:12px}
+.cmt-del{font-size:12px;margin-left:auto}
+.cmt-body{white-space:pre-wrap;overflow-wrap:anywhere}
+.cmt-new{display:flex;gap:8px;align-items:flex-end}
+.cmt-new textarea{flex:1;min-width:0;min-height:36px;max-height:140px;padding:7px 9px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink);font:inherit;font-size:14px;resize:vertical}
+.cmt-new textarea:focus{border-color:var(--focus);outline:none}
+.byline{font-size:12px;color:var(--muted)}
+
+/* Footer links */
+.foot-links{display:flex;gap:16px;flex-wrap:wrap;margin-top:12px;font-size:14px}
+.btn-sm{padding:7px 12px;font-size:14px}

@@ -143,11 +143,12 @@ body.is-dragging, body.is-dragging *{cursor:grabbing !important;user-select:none
 .editor .btns{display:flex;gap:8px;flex-wrap:wrap}
 .foot{color:var(--muted);font-size:13px;margin-top:8px}
 </style>
+<link rel="stylesheet" href="shared.css">
 </head>
 <body>
 <header class="sign">
   <div class="sign-inner">
-    <nav class="nav" aria-label="Pages"><a href="./">Places</a><a href="./itinerary.html" aria-current="page">Itinerary</a></nav>
+    <nav class="nav" aria-label="Pages"><a href="./">Places</a><a href="./itinerary.html" aria-current="page">Itinerary</a><span class="nav-right"><button id="activityBtn" class="nav-btn" type="button">Activity</button><button id="whoBtn" class="nav-btn" type="button">👤</button></span></nav>
     <h1>Itinerary</h1>
     <p>Pick anything from the list, give it a day and time, and everyone sees the schedule update live. Drag the ⠿ handle to reorder or move things between days.</p>
     <div class="status" id="status" role="status"></div>
@@ -158,6 +159,7 @@ body.is-dragging, body.is-dragging *{cursor:grabbing !important;user-select:none
   <section aria-labelledby="schedHead">
     <div class="section-head"><h2 id="schedHead">Schedule</h2><span class="count" id="schedCount">0</span></div>
     <div id="schedule"><div class="empty">Loading…</div></div>
+    <div class="foot-links"><button class="link" type="button" id="trashBtn">Trash</button></div>
   </section>
 
   <aside class="pool" aria-labelledby="poolHead">
@@ -169,11 +171,12 @@ body.is-dragging, body.is-dragging *{cursor:grabbing !important;user-select:none
     <div id="catFilter" class="chips" role="group" aria-label="Filter by category"></div>
     <div id="customSlot"></div>
     <div id="pool"><div class="empty">Loading…</div></div>
-    <p class="foot">Grouped by area, south to north, so nearby spots sit together. 👎 places are left out. Add more places on the <a class="link" href="./">Places</a> page.</p>
+    <p class="foot">Grouped by area, south to north, so nearby spots sit together. Places voted down are left out. Add more places on the <a class="link" href="./">Places</a> page.</p>
   </aside>
 </main>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script src="shared.js"></script>
 <script>
 (function(){
   const SUPABASE_URL = "https://jkehxprjvrivlzkgkvgw.supabase.co";
@@ -190,7 +193,9 @@ body.is-dragging, body.is-dragging *{cursor:grabbing !important;user-select:none
   try{ collapsed = new Set(JSON.parse(localStorage.getItem("itin-collapsed-areas")||"[]")); }catch(e){}
   const $ = id => document.getElementById(id);
   const statusEl = $("status");
-  let places = [], items = [];
+  let places = [], items = [], votes = [], comments = [];
+  let tally = ()=>({ up:0, down:0, upNames:[], downNames:[], mine:0, legacy:false });
+  const openThreads = new Set();
   // Which editor is open survives live re-renders: {key, draft}
   // key: "new:<placeId>" | "edit:<itemId>" | "custom"
   let open = null;
@@ -217,6 +222,8 @@ body.is-dragging, body.is-dragging *{cursor:grabbing !important;user-select:none
 
   if(!window.supabase){ statusEl.textContent="Couldn't load the app. Check your connection and refresh."; return; }
   const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  const T = TripShared(sb);
+  function score(p){ const t=tally(p.id); return t.up-t.down; }
 
   try{ $("hideScheduled").checked = localStorage.getItem("itin-hide-scheduled")==="1"; }catch(e){}
   $("hideScheduled").addEventListener("change", e=>{ try{ localStorage.setItem("itin-hide-scheduled", e.target.checked?"1":"0"); }catch(_){} renderPool(); });
@@ -248,25 +255,30 @@ body.is-dragging, body.is-dragging *{cursor:grabbing !important;user-select:none
   }
 
   // ---------- data ----------
-  async function load(){
-    const [pr, sr] = await Promise.all([
-      sb.from("places").select("id,name,category,neighborhood,area,borough,lat,address,maps_url,reaction").order("created_at"),
-      sb.from("schedule_items").select("*").order("day").order("position").order("start_time",{nullsFirst:true}).order("created_at")
+  async function load(force){
+    const [pr, sr, vr, cr] = await Promise.all([
+      sb.from("places").select("id,name,category,neighborhood,area,borough,lat,address,maps_url").is("deleted_at",null).order("created_at"),
+      sb.from("schedule_items").select("*").is("deleted_at",null).order("day").order("position").order("start_time",{nullsFirst:true}).order("created_at"),
+      sb.from("votes").select("place_id,voter_id,voter_name,value"),
+      sb.from("comments").select("*").not("schedule_item_id","is",null)
     ]);
     if(pr.error || sr.error){ setStatus("Couldn't load everything. Refresh to try again."); return; }
-    places = pr.data; items = sr.data;
-    // Don't yank an editor out from under someone mid-typing; redraw when they're done.
-    if(drag || (document.activeElement && document.activeElement.closest && document.activeElement.closest(".editor"))){ deferred=true; return; }
+    places = pr.data; items = sr.data; votes = vr.data||[]; comments = cr.data||[];
+    tally = T.tally(votes);
+    // Don't yank an editor or comment box out from under someone mid-typing; redraw when they're done.
+    if(drag || (!force && T.busyTyping())){ deferred=true; return; }
     if(open && open.key.startsWith("edit:") && !items.some(i=>"edit:"+i.id===open.key)) open=null;
     if(open && open.key.startsWith("new:") && !places.some(p=>"new:"+p.id===open.key)) open=null;
     render();
   }
   let timer=null, deferred=false;
-  document.addEventListener("focusout",()=>{ setTimeout(()=>{ if(deferred && !drag && !(document.activeElement&&document.activeElement.closest&&document.activeElement.closest(".editor"))){ deferred=false; render(); } },0); });
-  const reload=()=>{ clearTimeout(timer); timer=setTimeout(load,250); };
+  document.addEventListener("focusout",()=>{ setTimeout(()=>{ if(deferred && !drag && !T.busyTyping()){ deferred=false; render(); } },0); });
+  const reload=()=>{ clearTimeout(timer); timer=setTimeout(()=>load(),250); };
   sb.channel("itinerary-live")
     .on("postgres_changes",{event:"*",schema:"public",table:"schedule_items"},reload)
     .on("postgres_changes",{event:"*",schema:"public",table:"places"},reload)
+    .on("postgres_changes",{event:"*",schema:"public",table:"votes"},reload)
+    .on("postgres_changes",{event:"*",schema:"public",table:"comments"},reload)
     .subscribe();
 
   // ---------- editor ----------
@@ -353,16 +365,22 @@ body.is-dragging, body.is-dragging *{cursor:grabbing !important;user-select:none
   }
   // Renumber a day to match the given order; writes only rows that changed.
   async function applyOrder(day, ids){
-    const ups=[];
+    const ups=[], prev=[];
     ids.forEach((id,i)=>{
       const it=items.find(x=>x.id===id); if(!it) return;
-      if(it.day!==day || it.position!==i+1){ it.day=day; it.position=i+1; ups.push(it); }
+      if(it.day!==day || it.position!==i+1){ prev.push({ id:it.id, day:it.day, position:it.position }); it.day=day; it.position=i+1; ups.push(it); }
     });
     render();
-    if(!ups.length) return true;
-    const res=await Promise.all(ups.map(it=>sb.from("schedule_items").update({ day:it.day, position:it.position }).eq("id",it.id)));
-    if(res.some(r=>r.error)){ setStatus("Couldn't save the new order. Reloading."); await load(); return false; }
-    return true;
+    if(!ups.length) return prev;
+    const res=await Promise.all(ups.map(it=>sb.from("schedule_items").update({ day:it.day, position:it.position, ...T.by() }).eq("id",it.id)));
+    if(res.some(r=>r.error)){ setStatus("Couldn't save the new order. Reloading."); await load(true); return null; }
+    return prev;   // what to put back for Undo
+  }
+  async function restoreOrder(prev){
+    const res=await Promise.all(prev.map(p=>sb.from("schedule_items").update({ day:p.day, position:p.position, ...T.by() }).eq("id",p.id)));
+    const bad=res.find(r=>r.error); if(bad) throw bad.error;
+    for(const p of prev){ const it=items.find(x=>x.id===p.id); if(it){ it.day=p.day; it.position=p.position; } }
+    render();
   }
   function placeRec(p){
     return { place_id:p.id, name:p.name, category:["attraction","restaurant","location"].includes(p.category)?p.category:"other",
@@ -371,9 +389,11 @@ body.is-dragging, body.is-dragging *{cursor:grabbing !important;user-select:none
 
   async function insertItem(rec){
     if(rec.position==null) rec.position=chronoPosition(rec.day, eff(rec), null);
-    const { error } = await sb.from("schedule_items").insert(rec);
+    const { data:ins, error } = await sb.from("schedule_items").insert({ ...rec, ...T.byNew() }).select("id").single();
     if(error) return errMsg(error);
-    setStatus("Scheduled "+rec.name+" on "+fmtDay(rec.day)+".");
+    const msg="Scheduled "+rec.name+" on "+fmtDay(rec.day)+".";
+    setStatus(msg);
+    T.toast(msg, async()=>{ T.ok(await sb.from("schedule_items").delete().eq("id",ins.id)); await load(true); });
     return true;
   }
 
@@ -416,7 +436,7 @@ body.is-dragging, body.is-dragging *{cursor:grabbing !important;user-select:none
       sec.append(dl);
       for(const it of list){
         const row=el("div","entry"); row.dataset.id=it.id;
-        const h=el("button","handle","⠿"); h.type="button"; h.title="Drag to move";
+        const h=el("button","handle","⠿"); h.type="button"; h.title="Drag to move"; h.dataset.focusKey="h:"+it.id;
         h.setAttribute("aria-label","Move "+it.name+". Drag, or use the up and down arrow keys.");
         h.addEventListener("pointerdown",e=>startDrag(e,{ kind:"item", id:it.id, label:it.name, cat:it.category, src:row }));
         h.addEventListener("keydown",e=>keyMove(e,it));
@@ -434,12 +454,15 @@ body.is-dragging, body.is-dragging *{cursor:grabbing !important;user-select:none
             meals: it.category==="restaurant" || it.category==="other",
             initial:{ day:it.day, when: it.start_time ? "exact" : (it.slot||""), start:hhmm(it.start_time), end:hhmm(it.end_time), note:it.note||"" },
             onSave:async(v)=>{
-              const upd={ day:v.day, start_time:v.start_time, end_time:v.end_time, slot:v.slot, note:v.note };
+              const prevVals={ day:it.day, start_time:it.start_time, end_time:it.end_time, slot:it.slot||"", note:it.note||"", position:it.position };
+              const upd={ day:v.day, start_time:v.start_time, end_time:v.end_time, slot:v.slot, note:v.note, ...T.by() };
               const oldT=eff(it), newT=eff({ start_time: v.start_time ? v.start_time+":00" : null, slot:v.slot });
               if(v.day!==it.day || newT!==oldT) upd.position=chronoPosition(v.day, newT, it.id);
               const { error } = await sb.from("schedule_items").update(upd).eq("id",it.id);
               if(error) return errMsg(error);
-              setStatus("Updated "+it.name+"."); return true;
+              setStatus("Updated "+it.name+".");
+              T.toast("Updated "+it.name+".", async()=>{ T.ok(await sb.from("schedule_items").update({ ...prevVals, ...T.by() }).eq("id",it.id)); await load(true); });
+              return true;
             }}));
         }else{
           const act=el("div","actions");
@@ -447,11 +470,20 @@ body.is-dragging, body.is-dragging *{cursor:grabbing !important;user-select:none
           const a=el("a","link","Map"); a.href=mapsUrl(it); a.target="_blank"; a.rel="noopener";
           const rm=el("button","link danger","Remove"); rm.type="button";
           rm.onclick=async()=>{
-            const { error } = await sb.from("schedule_items").delete().eq("id",it.id);
+            const { error } = await sb.from("schedule_items").update({ deleted_at:new Date().toISOString(), ...T.by() }).eq("id",it.id);
             if(error){ setStatus("Couldn't remove that."); return; }
-            items=items.filter(x=>x.id!==it.id); render(); setStatus("Removed "+it.name+" from "+fmtDay(it.day)+".");
+            items=items.filter(x=>x.id!==it.id); render();
+            const msg="Removed "+it.name+" from "+fmtDay(it.day)+".";
+            setStatus(msg);
+            T.toast(msg, async()=>{ T.ok(await sb.from("schedule_items").update({ deleted_at:null, ...T.by() }).eq("id",it.id)); await load(true); });
           };
-          act.append(ed,a,rm); body.append(act);
+          const ic=comments.filter(c=>c.schedule_item_id===it.id);
+          const cm=el("button","link cmt-toggle", openThreads.has(it.id) ? "Hide comments" : ic.length ? "💬 "+ic.length : "Comment");
+          cm.type="button"; cm.setAttribute("aria-expanded", openThreads.has(it.id)?"true":"false"); cm.dataset.focusKey="cmt:"+it.id;
+          cm.onclick=()=>toggleThread(it.id);
+          act.append(ed,a,cm,rm); body.append(act);
+          if(openThreads.has(it.id)) body.append(T.thread({ key:"s:"+it.id, comments:ic, target:{ schedule_item_id:it.id }, label:it.name, onChange:()=>load(true) }));
+          if(it.created_by) body.append(el("div","byline","Added by "+it.created_by));
         }
         row.append(h,t,body); dl.append(row);
       }
@@ -467,8 +499,8 @@ body.is-dragging, body.is-dragging *{cursor:grabbing !important;user-select:none
     const hide=$("hideScheduled").checked;
     const counts=new Map();
     for(const it of items) if(it.place_id) counts.set(it.place_id,(counts.get(it.place_id)||0)+1);
-    const rank=p=>p.reaction==="up"?0:1;
-    const base=places.filter(p=>p.reaction!=="down").filter(p=>!(hide && counts.get(p.id)));
+    const rank=p=>-score(p);
+    const base=places.filter(p=>score(p)>=0).filter(p=>!(hide && counts.get(p.id)));
     renderCatFilter(base);
     const list=base.filter(p=>!catSel.size || catSel.has(poolCat(p)))
       .sort((a,b)=>rank(a)-rank(b) || (CAT_ORDER[a.category]??9)-(CAT_ORDER[b.category]??9) || a.name.localeCompare(b.name));
@@ -511,7 +543,8 @@ body.is-dragging, body.is-dragging *{cursor:grabbing !important;user-select:none
       ph.addEventListener("pointerdown",e=>startDrag(e,{ kind:"place", id:p.id, label:p.name, cat:p.category, src:item }));
       row.append(ph, bullet(p.category));
       const body=el("div","pbody");
-      const nm=el("div","pname",p.name+(p.reaction==="up"?" 👍":""));
+      const up=tally(p.id).up;
+      const nm=el("div","pname",p.name+(score(p)>0?" 👍"+(up>1?up:""):""));
       const n=counts.get(p.id);
       if(n){
         const tg=el("button","tag sched-tag",n>1?"Scheduled ×"+n:"Scheduled"); tg.type="button";
@@ -691,18 +724,29 @@ body.is-dragging, body.is-dragging *{cursor:grabbing !important;user-select:none
       const it=items.find(i=>i.id===d.id);
       if(!it || (day===d.origDay && prevEl===d.origPrev && nextEl===d.origNext)){ render(); finishDeferred(); return; }
       const fromDay=it.day;
-      if(await applyOrder(day, ids)) setStatus("Moved "+it.name+(fromDay!==day ? " to "+fmtDay(day) : "")+".");
+      const prev=await applyOrder(day, ids);
+      if(prev){
+        const msg="Moved "+it.name+(fromDay!==day ? " to "+fmtDay(day) : "")+".";
+        setStatus(msg); T.toast(msg, ()=>restoreOrder(prev));
+      }
     }else{
       const p=places.find(x=>x.id===d.id); if(!p){ render(); finishDeferred(); return; }
       const idx=ids.indexOf("__new__");
       render();
       const { data, error } = await sb.from("schedule_items")
-        .insert({ ...placeRec(p), day, start_time:null, end_time:null, slot:"", note:"", position:idx+1 }).select("*").single();
+        .insert({ ...placeRec(p), day, start_time:null, end_time:null, slot:"", note:"", position:idx+1, ...T.byNew() }).select("*").single();
       if(error){ setStatus(errMsg(error)); }
       else{
         items.push(data); ids[idx]=data.id;
         lastDay=day;
-        if(await applyOrder(day, ids)) setStatus("Scheduled "+p.name+" on "+fmtDay(day)+". Use Change time to give it a time.");
+        const prev=await applyOrder(day, ids);
+        if(prev){
+          setStatus("Scheduled "+p.name+" on "+fmtDay(day)+". Use Change time to give it a time.");
+          T.toast("Scheduled "+p.name+" on "+fmtDay(day)+".", async()=>{
+            T.ok(await sb.from("schedule_items").delete().eq("id",data.id));
+            await restoreOrder(prev.filter(x=>x.id!==data.id)); await load(true);
+          });
+        }
       }
     }
     finishDeferred();
@@ -723,28 +767,42 @@ body.is-dragging, body.is-dragging *{cursor:grabbing !important;user-select:none
       if(idx<ids.length-1){ order=[...ids]; [order[idx+1],order[idx]]=[order[idx],order[idx+1]]; }
       else{ const di=days.indexOf(it.day); if(di>=days.length-1) return; day=days[di+1]; order=[it.id, ...sortDay(dayItems(day)).map(i=>i.id)]; }
     }
-    const ok=await applyOrder(day, order);
+    const prev=await applyOrder(day, order);
     const hnd=document.querySelector('.entry[data-id="'+it.id+'"] .handle');
     if(hnd){ hnd.focus(); hnd.scrollIntoView({block:"nearest"}); }
-    if(ok) setStatus(it.name+": "+fmtDay(day)+", "+(order.indexOf(it.id)+1)+" of "+order.length+".");
+    if(prev){
+      setStatus(it.name+": "+fmtDay(day)+", "+(order.indexOf(it.id)+1)+" of "+order.length+".");
+      T.toast("Moved "+it.name+".", ()=>restoreOrder(prev));
+    }
   }
 
   async function sortByTime(day){
     const list=sortDay(dayItems(day));
     const timed=list.filter(i=>eff(i)).sort((a,b)=>eff(a)<eff(b)?-1:eff(a)>eff(b)?1:0);
     let k=0; const order=list.map(i=>eff(i) ? timed[k++].id : i.id);   // "Anytime" items keep their slots
-    if(await applyOrder(day, order)) setStatus("Sorted "+fmtDay(day)+" by time.");
+    const prev=await applyOrder(day, order);
+    if(prev){ setStatus("Sorted "+fmtDay(day)+" by time."); T.toast("Sorted "+fmtDay(day)+" by time.", ()=>restoreOrder(prev)); }
   }
 
-  function render(){
-    // Keep keyboard focus on the same item's handle across redraws (live updates redraw everything).
-    const ae=document.activeElement;
-    const fid=ae && ae.classList && ae.classList.contains("handle") && ae.closest(".entry") ? ae.closest(".entry").dataset.id : null;
-    renderSchedule(); renderPool(); renderCustom();
-    if(fid){ const h=document.querySelector('.entry[data-id="'+fid+'"] .handle'); if(h) h.focus({preventScroll:true}); }
+  function toggleThread(id){
+    if(openThreads.has(id)) openThreads.delete(id); else openThreads.add(id);
+    render();
+    if(openThreads.has(id)){ const t=document.querySelector('[data-focus-key="thread:s:'+id+'"]'); if(t) t.focus(); }
   }
+  // Redraw everything, keeping keyboard focus on the same control (handles, comment boxes, buttons).
+  function render(){ T.preserveFocus(()=>{ renderSchedule(); renderPool(); renderCustom(); }); }
 
-  load();
+  $("trashBtn").addEventListener("click",()=>T.openTrash({
+    load: async()=>{
+      const { data, error } = await sb.from("schedule_items").select("id,name,day,start_time,slot,deleted_at,updated_by").not("deleted_at","is",null).order("deleted_at",{ascending:false});
+      if(error) throw error;
+      return data.map(r=>({ ...r, sub:fmtDay(r.day)+" · "+whenText(r), by:r.updated_by }));
+    },
+    restore: async(r)=>{ T.ok(await sb.from("schedule_items").update({ deleted_at:null, ...T.by() }).eq("id",r.id)); await load(true); },
+    purge: async(r)=>{ T.ok(await sb.from("schedule_items").delete().eq("id",r.id)); }
+  }));
+
+  load().then(()=>T.maybeAskName());
 })();
 </script>
 </body>
