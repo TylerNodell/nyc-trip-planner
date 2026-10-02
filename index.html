@@ -30,8 +30,12 @@ button,input{font:inherit;color:inherit}
 :focus-visible{outline:3px solid var(--focus);outline-offset:2px}
 .sr{position:absolute;left:-9999px}
 
-.sign{background:var(--sign);color:var(--sign-ink);padding:22px 20px 20px;border-bottom:4px solid var(--sign-ink)}
+.sign{background:var(--sign);color:var(--sign-ink);padding:14px 20px 20px;border-bottom:4px solid var(--sign-ink)}
 .sign-inner{max-width:980px;margin:0 auto}
+.nav{display:flex;gap:18px;margin-bottom:14px;font-size:15px;font-weight:700}
+.nav a{color:#C9CDD1;text-decoration:none;padding-bottom:3px;border-bottom:3px solid transparent}
+.nav a:hover{color:#fff}
+.nav a[aria-current="page"]{color:#fff;border-bottom-color:var(--focus)}
 .sign h1{margin:0;font-weight:800;font-size:clamp(30px,6vw,44px);letter-spacing:-.02em;line-height:1.05}
 .sign p{margin:6px 0 18px;color:#C9CDD1;font-size:15px}
 .bullets{display:inline-flex;gap:6px;vertical-align:middle;margin-left:10px}
@@ -93,6 +97,7 @@ main{max-width:980px;margin:0 auto;padding:20px}
 <body>
 <header class="sign">
   <div class="sign-inner">
+    <nav class="nav" aria-label="Pages"><a href="./" aria-current="page">Places</a><a href="./itinerary.html">Itinerary</a></nav>
     <h1>NYC trip list <span class="bullets" aria-hidden="true"><span class="bullet b-attr">A</span><span class="bullet b-food">R</span></span></h1>
     <p>Type a place, pick the right match from Google Maps, and it lands in the right list.</p>
     <form class="search" id="searchForm" autocomplete="off">

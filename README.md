@@ -4,10 +4,13 @@ Live at **https://tylernodell.github.io/nyc-trip-planner/**
 
 A shared trip planner: look up places on Google Maps, sort them into attractions and restaurants, and react with 👍 / 👎. Anyone with the link can add, react, and remove; changes sync live.
 
-- **Front end:** `index.html`, a static page served by GitHub Pages from `main` / root
+The **Itinerary** page (`itinerary.html`) turns the list into a shared schedule: anyone can give a place a day and an optional start/end time and note, move it, or add custom items like flights. Overlapping times are flagged.
+
+- **Front end:** `index.html` and `itinerary.html`, static pages served by GitHub Pages from `main` / root
 - **Backend:** Supabase project `nyc-trip-planner` (`jkehxprjvrivlzkgkvgw`):
   - `places` table with row-level security (visitors can add, react, and remove; place details can't be edited after adding; capped at 500 rows)
-  - Realtime enabled on `places`
+  - `schedule_items` table (visitors can add, reschedule, and remove; capped at 1000 rows). Each item keeps a copy of the place's name, so it stays on the schedule even if the place is removed from the list.
+  - Realtime enabled on both tables
   - Edge Function `place-search`, which calls the Google Places API (New)
 
 ## Google Places API key

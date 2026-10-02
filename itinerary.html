@@ -1,0 +1,364 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>NYC itinerary</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🗽</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;500;700;800&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#F2F3F4; --panel:#FFFFFF; --ink:#000000; --muted:#5B6166; --line:#D5D8DB;
+  --sign:#000000; --sign-ink:#FFFFFF;
+  --attr:#0039A6; --food:#EE352E; --other:#808183; --focus:#FCCC0A;
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px);
+  padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme: dark){
+  :root{ --bg:#121416; --panel:#1C1F22; --ink:#F2F3F4; --muted:#9BA2A8; --line:#30353A;
+    --attr:#3A6FD8; --food:#F0524C; --other:#9A9B9D; color-scheme:dark; }
+}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*,*::before,*::after{box-sizing:inherit}
+body{margin:0;background:var(--bg);color:var(--ink);
+  font-family:"Schibsted Grotesk",-apple-system,"Helvetica Neue",Helvetica,Arial,sans-serif;
+  font-size:16px;line-height:1.45}
+button,input{font:inherit;color:inherit}
+:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
+
+.sign{background:var(--sign);color:var(--sign-ink);padding:14px 20px 20px;border-bottom:4px solid var(--sign-ink)}
+.sign-inner{max-width:1100px;margin:0 auto}
+.nav{display:flex;gap:18px;margin-bottom:14px;font-size:15px;font-weight:700}
+.nav a{color:#C9CDD1;text-decoration:none;padding-bottom:3px;border-bottom:3px solid transparent}
+.nav a:hover{color:#fff}
+.nav a[aria-current="page"]{color:#fff;border-bottom-color:var(--focus)}
+.sign h1{margin:0;font-weight:800;font-size:clamp(30px,6vw,44px);letter-spacing:-.02em;line-height:1.05}
+.sign p{margin:6px 0 0;color:#C9CDD1;font-size:15px}
+.status{min-height:1.4em;margin-top:8px;font-size:14px;color:#C9CDD1}
+
+.bullet{width:1.1em;height:1.1em;border-radius:50%;display:inline-grid;place-items:center;
+  color:#fff;font-weight:800;font-size:.55em;flex:none}
+.b-attr{background:var(--attr)} .b-food{background:var(--food)} .b-other{background:var(--other)}
+
+main{max-width:1100px;margin:0 auto;padding:20px;display:grid;grid-template-columns:minmax(0,1.7fr) minmax(0,1fr);gap:28px;align-items:start}
+@media (max-width:820px){ main{grid-template-columns:1fr} .pool{order:-1} }
+
+.section-head{display:flex;align-items:center;gap:10px;border-bottom:3px solid var(--ink);padding-bottom:8px;margin-bottom:6px}
+.section-head h2{margin:0;font-size:22px;font-weight:800;letter-spacing:-.01em}
+.count{margin-left:auto;color:var(--muted);font-weight:600}
+
+.day{margin-bottom:26px}
+.day-head{display:flex;align-items:baseline;gap:10px;margin:14px 0 4px}
+.day-head h3{margin:0;font-size:18px;font-weight:800}
+.day-head span{color:var(--muted);font-size:14px}
+.entry{display:grid;grid-template-columns:120px minmax(0,1fr);gap:12px;padding:10px 0;border-bottom:1px solid var(--line)}
+@media (max-width:480px){ .entry{grid-template-columns:88px minmax(0,1fr)} }
+.time{font-weight:700;font-size:14px;font-variant-numeric:tabular-nums;padding-top:2px}
+.time.anytime{color:var(--muted);font-weight:600}
+.entry-name{font-weight:700;display:flex;gap:8px;align-items:center}
+.entry-name .bullet{font-size:22px}
+.meta{color:var(--muted);font-size:14px}
+.note{font-size:14px;margin-top:2px}
+.warn{color:var(--food);font-size:13px;font-weight:600;margin-top:2px}
+.actions{display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:6px;font-size:14px}
+.link{background:none;border:0;padding:0;color:var(--attr);font-weight:600;cursor:pointer;text-decoration:underline;text-underline-offset:2px}
+.link.danger{color:var(--food)}
+.empty{color:var(--muted);font-size:15px;padding:14px 0}
+
+.pool{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px;position:sticky;top:calc(env(safe-area-inset-top,0px) + 12px);max-height:calc(100vh - 24px);overflow:auto}
+@media (max-width:820px){ .pool{position:static;max-height:none} }
+.pool .section-head{border-bottom-width:2px}
+.pool .section-head h2{font-size:18px}
+.pool-tools{display:flex;justify-content:space-between;align-items:center;gap:10px;margin:8px 0 4px;font-size:14px;flex-wrap:wrap}
+.pool-tools label{display:flex;gap:6px;align-items:center;color:var(--muted)}
+.pitem{padding:9px 0;border-bottom:1px solid var(--line)}
+.pitem:last-child{border-bottom:0}
+.prow{display:flex;gap:10px;align-items:center}
+.prow .bullet{font-size:22px}
+.pbody{flex:1;min-width:0}
+.pname{font-weight:700;font-size:15px}
+.tag{font-size:12px;font-weight:700;color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:1px 7px;margin-left:4px;white-space:nowrap}
+.btn{border:2px solid transparent;border-radius:6px;padding:8px 12px;font-weight:700;cursor:pointer;white-space:nowrap;font-size:14px}
+.btn-primary{background:var(--focus);color:#000}
+.btn-primary:disabled{opacity:.55;cursor:default}
+.btn-ghost{background:transparent;border-color:var(--line);color:var(--ink);font-weight:600}
+
+.editor{margin-top:10px;padding:12px;border:2px solid var(--focus);border-radius:8px;background:var(--panel);display:grid;gap:10px}
+.editor .row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
+@media (max-width:420px){ .editor .row{grid-template-columns:1fr 1fr} .editor .row .f-day{grid-column:1 / -1} }
+.editor label{display:grid;gap:3px;font-size:13px;font-weight:600;color:var(--muted)}
+.editor input{width:100%;min-width:0;padding:8px 9px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink);font-size:15px}
+.editor .err{color:var(--food);font-size:13px;font-weight:600;min-height:0}
+.editor .btns{display:flex;gap:8px;flex-wrap:wrap}
+.foot{color:var(--muted);font-size:13px;margin-top:8px}
+</style>
+</head>
+<body>
+<header class="sign">
+  <div class="sign-inner">
+    <nav class="nav" aria-label="Pages"><a href="./">Places</a><a href="./itinerary.html" aria-current="page">Itinerary</a></nav>
+    <h1>Itinerary</h1>
+    <p>Pick anything from the list, give it a day and time, and everyone sees the schedule update live.</p>
+    <div class="status" id="status" role="status"></div>
+  </div>
+</header>
+
+<main>
+  <section aria-labelledby="schedHead">
+    <div class="section-head"><h2 id="schedHead">Schedule</h2><span class="count" id="schedCount">0</span></div>
+    <div id="schedule"><div class="empty">Loading…</div></div>
+  </section>
+
+  <aside class="pool" aria-labelledby="poolHead">
+    <div class="section-head"><h2 id="poolHead">From your list</h2><span class="count" id="poolCount">0</span></div>
+    <div class="pool-tools">
+      <label><input type="checkbox" id="hideScheduled"> Hide scheduled</label>
+      <button class="link" type="button" id="customBtn">+ Custom item</button>
+    </div>
+    <div id="customSlot"></div>
+    <div id="pool"><div class="empty">Loading…</div></div>
+    <p class="foot">👎 places are left out. Add more places on the <a class="link" href="./">Places</a> page.</p>
+  </aside>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script>
+(function(){
+  const SUPABASE_URL = "https://jkehxprjvrivlzkgkvgw.supabase.co";
+  const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImprZWh4cHJqdnJpdmx6a2drdmd3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA5NTc4NjksImV4cCI6MjEwNjUzMzg2OX0.DfAHZ04gkjdrFKCMPyTrgIo7PYkHwFfYn0tmk8VNEhA";
+
+  const CATS = { attraction:{cls:"b-attr",letter:"A"}, restaurant:{cls:"b-food",letter:"R"}, other:{cls:"b-other",letter:"O"} };
+  const $ = id => document.getElementById(id);
+  const statusEl = $("status");
+  let places = [], items = [];
+  // Which editor is open survives live re-renders: {key, draft}
+  // key: "new:<placeId>" | "edit:<itemId>" | "custom"
+  let open = null;
+  let lastDay = "";
+
+  if(!window.supabase){ statusEl.textContent="Couldn't load the app. Check your connection and refresh."; return; }
+  const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+  try{ $("hideScheduled").checked = localStorage.getItem("itin-hide-scheduled")==="1"; }catch(e){}
+  $("hideScheduled").addEventListener("change", e=>{ try{ localStorage.setItem("itin-hide-scheduled", e.target.checked?"1":"0"); }catch(_){} renderPool(); });
+
+  // ---------- helpers ----------
+  function el(tag, cls, text){ const e=document.createElement(tag); if(cls) e.className=cls; if(text!=null) e.textContent=text; return e; }
+  function bullet(cat){ const c=CATS[cat]||CATS.other; const b=el("span","bullet "+c.cls,c.letter); b.setAttribute("aria-hidden","true"); return b; }
+  function setStatus(t){ statusEl.textContent=t||""; }
+  function todayNY(){ return new Intl.DateTimeFormat("en-CA",{timeZone:"America/New_York"}).format(new Date()); }
+  function hhmm(t){ return t ? t.slice(0,5) : ""; }
+  function fmtTime(t){
+    if(!t) return "";
+    let [h,m]=t.split(":").map(Number); const ap=h>=12?"PM":"AM"; h=h%12||12;
+    return h+(m?":"+String(m).padStart(2,"0"):"")+" "+ap;
+  }
+  function fmtDay(d){
+    const [y,mo,da]=d.split("-").map(Number);
+    return new Date(Date.UTC(y,mo-1,da)).toLocaleDateString(undefined,{weekday:"long",month:"short",day:"numeric",timeZone:"UTC"});
+  }
+  function mapsUrl(p){
+    if(p.maps_url) return p.maps_url;
+    return "https://www.google.com/maps/search/?api=1&query="+encodeURIComponent([p.name,p.address||p.neighborhood,"New York"].filter(Boolean).join(", "));
+  }
+  function defaultDay(){ return lastDay || (items.length ? items[items.length-1].day : todayNY()); }
+  function errMsg(error){
+    if(/full/i.test(error.message||"")) return "The schedule is full. Remove some items first.";
+    if(error.code==="23514") return "End time has to be after the start time.";
+    return "That didn't save. Try again.";
+  }
+
+  // ---------- data ----------
+  async function load(){
+    const [pr, sr] = await Promise.all([
+      sb.from("places").select("id,name,category,neighborhood,address,maps_url,reaction").order("created_at"),
+      sb.from("schedule_items").select("*").order("day").order("start_time",{nullsFirst:true}).order("created_at")
+    ]);
+    if(pr.error || sr.error){ setStatus("Couldn't load everything. Refresh to try again."); return; }
+    places = pr.data; items = sr.data;
+    // Don't yank an editor out from under someone mid-typing; redraw when they're done.
+    if(document.activeElement && document.activeElement.closest && document.activeElement.closest(".editor")){ deferred=true; return; }
+    if(open && open.key.startsWith("edit:") && !items.some(i=>"edit:"+i.id===open.key)) open=null;
+    if(open && open.key.startsWith("new:") && !places.some(p=>"new:"+p.id===open.key)) open=null;
+    render();
+  }
+  let timer=null, deferred=false;
+  document.addEventListener("focusout",()=>{ setTimeout(()=>{ if(deferred && !(document.activeElement&&document.activeElement.closest&&document.activeElement.closest(".editor"))){ deferred=false; render(); } },0); });
+  const reload=()=>{ clearTimeout(timer); timer=setTimeout(load,250); };
+  sb.channel("itinerary-live")
+    .on("postgres_changes",{event:"*",schema:"public",table:"schedule_items"},reload)
+    .on("postgres_changes",{event:"*",schema:"public",table:"places"},reload)
+    .subscribe();
+
+  // ---------- editor ----------
+  function editor({key, title, withName, initial, saveLabel, onSave}){
+    if(!open || open.key!==key || !open.draft) open={key, fresh:open&&open.key===key&&open.fresh, draft:Object.assign({name:"",day:defaultDay(),start:"",end:"",note:""}, initial)};
+    const d=open.draft;
+    const box=el("div","editor");
+    box.setAttribute("role","group"); box.setAttribute("aria-label",title);
+    function field(label, type, prop, cls, attrs){
+      const l=el("label",cls||""); l.append(label);
+      const i=el("input"); i.type=type; i.value=d[prop]||"";
+      Object.assign(i, attrs||{});
+      i.addEventListener("input",()=>{ d[prop]=i.value; });
+      l.append(i); return [l,i];
+    }
+    let nameInput=null;
+    if(withName){ const [l,i]=field("What","text","name","",{maxLength:200,placeholder:"e.g. Flight lands at JFK"}); nameInput=i; box.append(l); }
+    const row=el("div","row");
+    const [dl,di]=field("Day","date","day","f-day",{required:true});
+    const [sl]=field("Start","time","start","",{step:300});
+    const [eL]=field("End","time","end","",{step:300});
+    row.append(dl,sl,eL); box.append(row);
+    const [nl]=field("Note (optional)","text","note","",{maxLength:300,placeholder:"Reservation for 4, bring tickets…"});
+    box.append(nl);
+    const err=el("div","err"); err.setAttribute("role","alert"); box.append(err);
+    const btns=el("div","btns");
+    const save=el("button","btn btn-primary",saveLabel); save.type="button";
+    const cancel=el("button","btn btn-ghost","Cancel"); cancel.type="button";
+    cancel.onclick=()=>{ open=null; render(); };
+    save.onclick=async()=>{
+      err.textContent="";
+      if(withName && !d.name.trim()){ err.textContent="Give it a name."; nameInput.focus(); return; }
+      if(!d.day){ err.textContent="Pick a day."; di.focus(); return; }
+      if(d.end && !d.start){ err.textContent="Add a start time, or clear the end time."; return; }
+      if(d.start && d.end && d.end<=d.start){ err.textContent="End time has to be after the start time."; return; }
+      save.disabled=true;
+      const ok = await onSave({ name:d.name.trim(), day:d.day, start_time:d.start||null, end_time:d.end||null, note:d.note.trim() });
+      save.disabled=false;
+      if(ok===true){ lastDay=d.day; open=null; await load(); }
+      else if(ok) err.textContent=ok;
+    };
+    btns.append(save,cancel); box.append(btns);
+    if(open.fresh){ open.fresh=false; setTimeout(()=>{ (nameInput||di).focus(); box.scrollIntoView({block:"nearest"}); },0); }
+    return box;
+  }
+
+  async function insertItem(rec){
+    const { error } = await sb.from("schedule_items").insert(rec);
+    if(error) return errMsg(error);
+    setStatus("Scheduled "+rec.name+" on "+fmtDay(rec.day)+".");
+    return true;
+  }
+
+  // ---------- render: schedule ----------
+  function renderSchedule(){
+    const wrap=$("schedule"); wrap.replaceChildren();
+    $("schedCount").textContent=items.length;
+    if(!items.length){ wrap.append(el("div","empty","Nothing scheduled yet. Pick a place from your list to give it a day and time.")); return; }
+    const byDay=new Map();
+    for(const it of items){ if(!byDay.has(it.day)) byDay.set(it.day,[]); byDay.get(it.day).push(it); }
+    for(const [day, list] of byDay){
+      const sec=el("section","day");
+      const head=el("div","day-head"); head.append(el("h3","",fmtDay(day)), el("span","",list.length+(list.length===1?" item":" items")));
+      sec.append(head);
+      // overlap detection among timed items
+      const timed=list.filter(i=>i.start_time);
+      const overlaps=new Map();
+      for(let a=0;a<timed.length;a++) for(let b=a+1;b<timed.length;b++){
+        const A=timed[a], B=timed[b];
+        const aEnd=A.end_time||A.start_time, bEnd=B.end_time||B.start_time;
+        const clash = A.start_time===B.start_time || (A.start_time<bEnd && B.start_time<aEnd);
+        if(clash){ overlaps.set(A.id,B.name); overlaps.set(B.id,A.name); }
+      }
+      for(const it of list){
+        const row=el("div","entry");
+        const t=el("div","time"+(it.start_time?"":" anytime"),
+          it.start_time ? fmtTime(it.start_time)+(it.end_time?" – "+fmtTime(it.end_time):"") : "Anytime");
+        const body=el("div");
+        const nm=el("div","entry-name"); nm.append(bullet(it.category), el("span","",it.name));
+        body.append(nm);
+        if(it.neighborhood||it.address) body.append(el("div","meta",[it.neighborhood,it.address].filter(Boolean).join(" · ")));
+        if(it.note) body.append(el("div","note",it.note));
+        if(overlaps.has(it.id)) body.append(el("div","warn","Overlaps with "+overlaps.get(it.id)));
+        const key="edit:"+it.id;
+        if(open && open.key===key){
+          body.append(editor({ key, title:"Edit "+it.name, withName:false, saveLabel:"Save",
+            initial:{ day:it.day, start:hhmm(it.start_time), end:hhmm(it.end_time), note:it.note||"" },
+            onSave:async(v)=>{
+              const { error } = await sb.from("schedule_items").update({ day:v.day, start_time:v.start_time, end_time:v.end_time, note:v.note }).eq("id",it.id);
+              if(error) return errMsg(error);
+              setStatus("Updated "+it.name+"."); return true;
+            }}));
+        }else{
+          const act=el("div","actions");
+          const ed=el("button","link","Change time"); ed.type="button"; ed.onclick=()=>openEditor(key);
+          const a=el("a","link","Map"); a.href=mapsUrl(it); a.target="_blank"; a.rel="noopener";
+          const rm=el("button","link danger","Remove"); rm.type="button";
+          rm.onclick=async()=>{
+            const { error } = await sb.from("schedule_items").delete().eq("id",it.id);
+            if(error){ setStatus("Couldn't remove that."); return; }
+            items=items.filter(x=>x.id!==it.id); render(); setStatus("Removed "+it.name+" from "+fmtDay(it.day)+".");
+          };
+          act.append(ed,a,rm); body.append(act);
+        }
+        row.append(t,body); sec.append(row);
+      }
+      wrap.append(sec);
+    }
+  }
+
+  function openEditor(key){ open={key, draft:null, fresh:true}; render(); }
+
+  // ---------- render: pool ----------
+  function renderPool(){
+    const wrap=$("pool"); wrap.replaceChildren();
+    const hide=$("hideScheduled").checked;
+    const counts=new Map();
+    for(const it of items) if(it.place_id) counts.set(it.place_id,(counts.get(it.place_id)||0)+1);
+    const rank=p=>p.reaction==="up"?0:1;
+    const list=places.filter(p=>p.reaction!=="down")
+      .filter(p=>!(hide && counts.get(p.id)))
+      .sort((a,b)=>rank(a)-rank(b) || (a.category===b.category?0:a.category==="attraction"?-1:1) || a.name.localeCompare(b.name));
+    $("poolCount").textContent=list.length;
+    if(!list.length){
+      wrap.append(el("div","empty", places.length ? "Everything's scheduled." : "Your list is empty. Add places on the Places page first."));
+      return;
+    }
+    for(const p of list){
+      const item=el("div","pitem");
+      const row=el("div","prow");
+      row.append(bullet(p.category));
+      const body=el("div","pbody");
+      const nm=el("div","pname",p.name+(p.reaction==="up"?" 👍":""));
+      const n=counts.get(p.id); if(n) nm.append(el("span","tag",n>1?"Scheduled ×"+n:"Scheduled"));
+      body.append(nm);
+      if(p.neighborhood) body.append(el("div","meta",p.neighborhood));
+      row.append(body);
+      const key="new:"+p.id;
+      if(!(open && open.key===key)){
+        const b=el("button","btn btn-primary",n?"Again":"Schedule"); b.type="button";
+        b.onclick=()=>openEditor(key);
+        row.append(b);
+      }
+      item.append(row);
+      if(open && open.key===key){
+        item.append(editor({ key, title:"Schedule "+p.name, withName:false, saveLabel:"Add to schedule", initial:{},
+          onSave:(v)=>insertItem({ place_id:p.id, name:p.name, category:["attraction","restaurant"].includes(p.category)?p.category:"other",
+            neighborhood:p.neighborhood||"", address:p.address||"", maps_url:p.maps_url||null,
+            day:v.day, start_time:v.start_time, end_time:v.end_time, note:v.note }) }));
+      }
+      wrap.append(item);
+    }
+  }
+
+  function renderCustom(){
+    const slot=$("customSlot"); slot.replaceChildren();
+    if(open && open.key==="custom"){
+      slot.append(editor({ key:"custom", title:"Add a custom item", withName:true, saveLabel:"Add to schedule", initial:{},
+        onSave:(v)=>insertItem({ place_id:null, name:v.name, category:"other", neighborhood:"", address:"", maps_url:null,
+          day:v.day, start_time:v.start_time, end_time:v.end_time, note:v.note }) }));
+    }
+  }
+  $("customBtn").onclick=()=>openEditor("custom");
+
+  function render(){ renderSchedule(); renderPool(); renderCustom(); }
+
+  load();
+})();
+</script>
+</body>
+</html>
