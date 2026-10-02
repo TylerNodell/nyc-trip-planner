@@ -62,6 +62,8 @@ main{max-width:980px;margin:0 auto;padding:20px}
 .cand-body{flex:1;min-width:180px}
 .cand-name{font-weight:700;font-size:17px}
 .meta{color:var(--muted);font-size:14px}
+.desc{font-size:14px;margin-top:3px;max-width:60ch}
+.ai-note{font-size:12px;color:var(--muted)}
 .warn{color:var(--food);font-size:14px;font-weight:600}
 .cand .btn{align-self:center}
 
@@ -99,10 +101,10 @@ main{max-width:980px;margin:0 auto;padding:20px}
   <div class="sign-inner">
     <nav class="nav" aria-label="Pages"><a href="./" aria-current="page">Places</a><a href="./itinerary.html">Itinerary</a></nav>
     <h1>NYC trip list <span class="bullets" aria-hidden="true"><span class="bullet b-attr">A</span><span class="bullet b-food">R</span></span></h1>
-    <p>Type a place, pick the right match from Google Maps, and it lands in the right list.</p>
+    <p>Type a place or paste a Google Maps link, pick the right match, and it lands in the right list.</p>
     <form class="search" id="searchForm" autocomplete="off">
       <label for="q" class="sr">Place name</label>
-      <input id="q" type="text" maxlength="200" placeholder="e.g. Katz's Deli, the High Line, Joe's Pizza" required>
+      <input id="q" type="text" maxlength="2000" placeholder="Katz's Deli, the High Line, or a Google Maps link" required>
       <button class="btn btn-primary" id="lookBtn" type="submit">Look up</button>
     </form>
     <div class="status" id="status" role="status"></div>
@@ -161,6 +163,12 @@ main{max-width:980px;margin:0 auto;padding:20px}
     if(p.maps_url) return p.maps_url;
     return "https://www.google.com/maps/search/?api=1&query="+encodeURIComponent([p.name,p.address||p.neighborhood,"New York"].filter(Boolean).join(", "));
   }
+  function appendSummary(parent,p){
+    if(!p.summary) return;
+    parent.append(el("div","desc",p.summary));
+    if(p.summary_ai) parent.append(el("div","ai-note","Summarized with Gemini"));
+  }
+  function isLink(q){ return /^https?:\/\//i.test(q) || /^(maps\.app\.goo\.gl|goo\.gl|(www\.|maps\.)?google\.)/i.test(q); }
   function ratingText(p){
     if(p.rating==null) return "";
     return "★ "+Number(p.rating).toFixed(1)+(p.rating_count!=null?" ("+Number(p.rating_count).toLocaleString()+")":"");
@@ -177,7 +185,9 @@ main{max-width:980px;margin:0 auto;padding:20px}
     const rec = {
       name:p.name, category:normCat(p.category), type:p.type||"", neighborhood:p.neighborhood||"",
       address:p.address||"", google_place_id:p.google_place_id||null, maps_url:p.maps_url||null,
-      rating:p.rating??null, rating_count:p.rating_count??null
+      rating:p.rating??null, rating_count:p.rating_count??null,
+      summary:(p.summary||"").slice(0,1000), summary_ai:!!p.summary_ai,
+      lat:p.lat??null, lng:p.lng??null
     };
     const { error } = await sb.from("places").insert(rec);
     if(error){
@@ -224,6 +234,7 @@ main{max-width:980px;margin:0 auto;padding:20px}
       main.append(el("div","item-name",p.name));
       const bits=[p.type,ratingText(p),p.address].filter(Boolean);
       if(bits.length) main.append(el("div","meta",bits.join(" · ")));
+      appendSummary(main,p);
       const reacts=el("div","reacts");
       for(const [val,emoji,cls,label] of [["up","👍","up","Thumbs up"],["down","👎","dn","Thumbs down"]]){
         const r=el("button","react "+cls,emoji); r.type="button";
@@ -252,7 +263,8 @@ main{max-width:980px;margin:0 auto;padding:20px}
   }
 
   // ---------- lookup ----------
-  function showCandidates(query, matches){
+  function showCandidates(query, matches, manualName){
+    if(manualName===undefined) manualName=query;
     const box=$("candList"); box.replaceChildren();
     $("results").hidden=false;
     $("resultsTitle").textContent = matches.length ? "Pick the right one" : "No match found";
@@ -262,8 +274,9 @@ main{max-width:980px;margin:0 auto;padding:20px}
       row.append(bullet(cat));
       const body=el("div","cand-body");
       body.append(el("div","cand-name",m.name));
-      const bits=[m.type,ratingText(m),m.neighborhood,m.address].filter(Boolean);
+      const bits=[m.type,ratingText(m),m.address].filter(Boolean);
       if(bits.length) body.append(el("div","meta",bits.join(" · ")));
+      appendSummary(body,m);
       if(m.closed) body.append(el("div","warn","Permanently closed"));
       else if(m.temporarily_closed) body.append(el("div","warn","Temporarily closed"));
       row.append(body);
@@ -274,12 +287,16 @@ main{max-width:980px;margin:0 auto;padding:20px}
     }
     const manual=el("div","cand");
     const mb=el("div","cand-body");
-    mb.append(el("div","meta",'Not it? Add "'+query+'" yourself:'));
     manual.append(mb);
-    for(const c of ["attraction","restaurant"]){
-      const b=el("button","btn btn-ghost","As "+c); b.type="button";
-      b.onclick=async()=>{ if(await addPlace({name:query,category:c})){ $("results").hidden=true; $("q").value=""; } };
-      manual.append(b);
+    if(!manualName){
+      mb.append(el("div","meta","Couldn't read that link. In Google Maps, open the place and use Share → Copy link, or type the name instead."));
+    }else{
+      mb.append(el("div","meta",'Not it? Add "'+manualName+'" yourself:'));
+      for(const c of ["attraction","restaurant"]){
+        const b=el("button","btn btn-ghost","As "+c); b.type="button";
+        b.onclick=async()=>{ if(await addPlace({name:manualName,category:c})){ $("results").hidden=true; $("q").value=""; } };
+        manual.append(b);
+      }
     }
     box.append(manual);
   }
@@ -287,7 +304,8 @@ main{max-width:980px;margin:0 auto;padding:20px}
   $("searchForm").addEventListener("submit", async (ev)=>{
     ev.preventDefault();
     const q=$("q").value.trim(); if(!q) return;
-    const btn=$("lookBtn"); btn.disabled=true; setStatus("Looking up "+q+"…");
+    const link=isLink(q);
+    const btn=$("lookBtn"); btn.disabled=true; setStatus(link ? "Reading that Google Maps link…" : "Looking up "+q+"…");
     try{
       const { data, error } = await sb.functions.invoke("place-search", { body:{ query:q } });
       if(error){
@@ -295,12 +313,13 @@ main{max-width:980px;margin:0 auto;padding:20px}
         try{ code=(await error.context.json()).error; }catch(e){}
         setStatus(code==="missing_key" ? "Lookups aren't set up yet (Google API key missing). You can still add places by hand."
                                        : "The lookup didn't go through. Try again or add it by hand.");
-        showCandidates(q,[]);
+        showCandidates(q,[], link ? "" : q);
         return;
       }
       const matches=(data&&data.matches)||[];
-      showCandidates(q,matches);
-      setStatus(matches.length ? "" : "Google Maps didn't find that. Check the spelling or add it by hand.");
+      const manualName = link ? ((data.link&&data.link.name)||"") : q;
+      showCandidates(q,matches,manualName);
+      setStatus(matches.length ? "" : link ? "Couldn't find a place for that link." : "Google Maps didn't find that. Check the spelling or add it by hand.");
     }finally{ btn.disabled=false; }
   });
 
