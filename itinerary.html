@@ -26,7 +26,7 @@ html{scroll-padding-top:env(safe-area-inset-top,0px)}
 body{margin:0;background:var(--bg);color:var(--ink);
   font-family:"Schibsted Grotesk",-apple-system,"Helvetica Neue",Helvetica,Arial,sans-serif;
   font-size:16px;line-height:1.45}
-button,input{font:inherit;color:inherit}
+button,input,select{font:inherit;color:inherit}
 :focus-visible{outline:3px solid var(--focus);outline-offset:2px}
 
 .sign{background:var(--sign);color:var(--sign-ink);padding:14px 20px 20px;border-bottom:4px solid var(--sign-ink)}
@@ -78,6 +78,7 @@ body.is-dragging, body.is-dragging *{cursor:grabbing !important;user-select:none
 .sort-time{font-size:13px;white-space:nowrap}
 .time{font-weight:700;font-size:14px;font-variant-numeric:tabular-nums;padding-top:2px}
 .time.anytime{color:var(--muted);font-weight:600}
+.time.slot{font-weight:700}
 .entry-name{font-weight:700;display:flex;gap:8px;align-items:center}
 .entry-name .bullet{font-size:22px}
 .meta{color:var(--muted);font-size:14px}
@@ -128,9 +129,11 @@ body.is-dragging, body.is-dragging *{cursor:grabbing !important;user-select:none
 
 .editor{margin-top:10px;padding:12px;border:2px solid var(--focus);border-radius:8px;background:var(--panel);display:grid;gap:10px}
 .editor .row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
-@media (max-width:420px){ .editor .row{grid-template-columns:1fr 1fr} .editor .row .f-day{grid-column:1 / -1} }
+@media (max-width:420px){ .editor .row{grid-template-columns:1fr 1fr} }
 .editor label{display:grid;gap:3px;font-size:13px;font-weight:600;color:var(--muted)}
-.editor input{width:100%;min-width:0;padding:8px 9px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink);font-size:15px}
+.editor input,.editor select{width:100%;min-width:0;padding:8px 9px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink);font-size:15px}
+.editor .row.two{grid-template-columns:1fr 1fr}
+.editor .row[hidden]{display:none}
 .editor .err{color:var(--food);font-size:13px;font-weight:600;min-height:0}
 .editor .btns{display:flex;gap:8px;flex-wrap:wrap}
 .foot{color:var(--muted);font-size:13px;margin-top:8px}
@@ -184,6 +187,18 @@ body.is-dragging, body.is-dragging *{cursor:grabbing !important;user-select:none
   let lastDay = "";
   // Trip window: every day in it gets a slot on the schedule.
   const TRIP_START = "2026-12-18", TRIP_END = "2027-01-03";
+  // Parts of day / meals, with a rough time used only for ordering.
+  const MEALS = [["breakfast","Breakfast","08:00:00"],["brunch","Brunch","11:00:00"],["lunch","Lunch","12:30:00"],
+                 ["snack","Snack","15:30:00"],["dinner","Dinner","19:00:00"],["dessert","Dessert","21:00:00"]];
+  const PARTS = [["morning","Morning","09:00:00"],["afternoon","Afternoon","14:00:00"],["evening","Evening","19:30:00"],["night","Night","22:00:00"]];
+  const SLOT = Object.fromEntries([...MEALS,...PARTS].map(([v,l,t])=>[v,{label:l,time:t}]));
+  // Time used for ordering: exact start, else the slot's rough time, else none.
+  function eff(x){ return x.start_time || (x.slot && SLOT[x.slot] ? SLOT[x.slot].time : ""); }
+  function whenText(x){
+    if(x.start_time) return fmtTime(x.start_time)+(x.end_time?" – "+fmtTime(x.end_time):"");
+    if(x.slot && SLOT[x.slot]) return SLOT[x.slot].label;
+    return "Anytime";
+  }
   function tripDays(){
     const out=[]; const d=new Date(TRIP_START+"T12:00:00Z"), end=new Date(TRIP_END+"T12:00:00Z");
     for(; d<=end; d.setUTCDate(d.getUTCDate()+1)) out.push(d.toISOString().slice(0,10));
@@ -245,8 +260,8 @@ body.is-dragging, body.is-dragging *{cursor:grabbing !important;user-select:none
     .subscribe();
 
   // ---------- editor ----------
-  function editor({key, title, withName, initial, saveLabel, onSave}){
-    if(!open || open.key!==key || !open.draft) open={key, fresh:open&&open.key===key&&open.fresh, draft:Object.assign({name:"",day:defaultDay(),start:"",end:"",note:""}, initial)};
+  function editor({key, title, withName, initial, saveLabel, onSave, meals}){
+    if(!open || open.key!==key || !open.draft) open={key, fresh:open&&open.key===key&&open.fresh, draft:Object.assign({name:"",day:defaultDay(),when:"",start:"",end:"",note:""}, initial)};
     const d=open.draft;
     const box=el("div","editor");
     box.setAttribute("role","group"); box.setAttribute("aria-label",title);
@@ -259,11 +274,29 @@ body.is-dragging, body.is-dragging *{cursor:grabbing !important;user-select:none
     }
     let nameInput=null;
     if(withName){ const [l,i]=field("What","text","name","",{maxLength:200,placeholder:"e.g. Flight lands at JFK"}); nameInput=i; box.append(l); }
-    const row=el("div","row");
+    const row=el("div","row two");
     const [dl,di]=field("Day","date","day","f-day",{required:true});
-    const [sl]=field("Start","time","start","",{step:300});
-    const [eL]=field("End","time","end","",{step:300});
-    row.append(dl,sl,eL); box.append(row);
+    const wl=el("label",""); wl.append("When");
+    const ws=el("select");
+    const opt=(v,l)=>{ const o=el("option","",l); o.value=v; return o; };
+    ws.append(opt("","Anytime"), opt("exact","Exact time…"));
+    // Meals for restaurants (or a slot that's already set), parts of day for everything.
+    const showMeals = meals || MEALS.some(m=>m[0]===d.when);
+    if(showMeals){ const g=el("optgroup"); g.label="Meal"; for(const [v,l] of MEALS) g.append(opt(v,l)); ws.append(g); }
+    const g2=el("optgroup"); g2.label="Part of day"; for(const [v,l] of PARTS) g2.append(opt(v,l)); ws.append(g2);
+    ws.value=d.when;
+    wl.append(ws);
+    row.append(dl,wl); box.append(row);
+    const trow=el("div","row two");
+    const [sl,si]=field("Start","time","start","",{step:300});
+    const [eL,ei]=field("End (optional)","time","end","",{step:300});
+    trow.append(sl,eL); trow.hidden=d.when!=="exact"; box.append(trow);
+    ws.addEventListener("change",()=>{
+      d.when=ws.value;
+      trow.hidden=d.when!=="exact";
+      if(d.when!=="exact"){ d.start=""; d.end=""; si.value=""; ei.value=""; }
+      else setTimeout(()=>si.focus(),0);
+    });
     const [nl]=field("Note (optional)","text","note","",{maxLength:300,placeholder:"Reservation for 4, bring tickets…"});
     box.append(nl);
     const err=el("div","err"); err.setAttribute("role","alert"); box.append(err);
@@ -275,10 +308,13 @@ body.is-dragging, body.is-dragging *{cursor:grabbing !important;user-select:none
       err.textContent="";
       if(withName && !d.name.trim()){ err.textContent="Give it a name."; nameInput.focus(); return; }
       if(!d.day){ err.textContent="Pick a day."; di.focus(); return; }
-      if(d.end && !d.start){ err.textContent="Add a start time, or clear the end time."; return; }
-      if(d.start && d.end && d.end<=d.start){ err.textContent="End time has to be after the start time."; return; }
+      const exact=d.when==="exact";
+      if(exact && !d.start){ err.textContent="Add a start time, or pick another option under When."; si.focus(); return; }
+      if(exact && d.end && d.end<=d.start){ err.textContent="End time has to be after the start time."; return; }
       save.disabled=true;
-      const ok = await onSave({ name:d.name.trim(), day:d.day, start_time:d.start||null, end_time:d.end||null, note:d.note.trim() });
+      const ok = await onSave({ name:d.name.trim(), day:d.day,
+        start_time: exact ? d.start : null, end_time: exact && d.end ? d.end : null,
+        slot: exact ? "" : (d.when||""), note:d.note.trim() });
       save.disabled=false;
       if(ok===true){ lastDay=d.day; open=null; await load(); }
       else if(ok) err.textContent=ok;
@@ -290,7 +326,7 @@ body.is-dragging, body.is-dragging *{cursor:grabbing !important;user-select:none
 
   // ---------- ordering ----------
   function sortDay(list){
-    return [...list].sort((a,b)=>(a.position-b.position) || ((a.start_time||"")<(b.start_time||"")?-1:(a.start_time||"")>(b.start_time||"")?1:0) || (a.created_at<b.created_at?-1:1));
+    return [...list].sort((a,b)=>(a.position-b.position) || (eff(a)<eff(b)?-1:eff(a)>eff(b)?1:0) || (a.created_at<b.created_at?-1:1));
   }
   function dayItems(day, excludeId){ return items.filter(i=>i.day===day && i.id!==excludeId); }
   // Where a new/edited item goes: among timed items by time, otherwise at the end of the day.
@@ -299,7 +335,7 @@ body.is-dragging, body.is-dragging *{cursor:grabbing !important;user-select:none
     if(!list.length) return 1;
     if(start){
       const s=start.length===5 ? start+":00" : start;
-      const idx=list.findIndex(i=>i.start_time && i.start_time>s);
+      const idx=list.findIndex(i=>eff(i) && eff(i)>s);
       if(idx===0) return list[0].position-1;
       if(idx>0) return (list[idx-1].position+list[idx].position)/2;
     }
@@ -324,7 +360,7 @@ body.is-dragging, body.is-dragging *{cursor:grabbing !important;user-select:none
   }
 
   async function insertItem(rec){
-    if(rec.position==null) rec.position=chronoPosition(rec.day, rec.start_time, null);
+    if(rec.position==null) rec.position=chronoPosition(rec.day, eff(rec), null);
     const { error } = await sb.from("schedule_items").insert(rec);
     if(error) return errMsg(error);
     setStatus("Scheduled "+rec.name+" on "+fmtDay(rec.day)+".");
@@ -373,7 +409,7 @@ body.is-dragging, body.is-dragging *{cursor:grabbing !important;user-select:none
       }
       // flag timed items that sit earlier than something above them
       const ooo=new Set(); let maxT="";
-      for(const it of list){ if(!it.start_time) continue; if(it.start_time<maxT) ooo.add(it.id); else maxT=it.start_time; }
+      for(const it of list){ const t=eff(it); if(!t) continue; if(t<maxT) ooo.add(it.id); else maxT=t; }
       if(ooo.size){
         const st=el("button","link sort-time","Sort by time"); st.type="button";
         st.onclick=()=>sortByTime(day);
@@ -386,8 +422,7 @@ body.is-dragging, body.is-dragging *{cursor:grabbing !important;user-select:none
         h.setAttribute("aria-label","Move "+it.name+". Drag, or use the up and down arrow keys.");
         h.addEventListener("pointerdown",e=>startDrag(e,{ kind:"item", id:it.id, label:it.name, cat:it.category, src:row }));
         h.addEventListener("keydown",e=>keyMove(e,it));
-        const t=el("div","time"+(it.start_time?"":" anytime"),
-          it.start_time ? fmtTime(it.start_time)+(it.end_time?" – "+fmtTime(it.end_time):"") : "Anytime");
+        const t=el("div","time"+(it.start_time?"":it.slot?" slot":" anytime"), whenText(it));
         const body=el("div");
         const nm=el("div","entry-name"); nm.append(bullet(it.category), el("span","",it.name));
         body.append(nm);
@@ -398,10 +433,12 @@ body.is-dragging, body.is-dragging *{cursor:grabbing !important;user-select:none
         const key="edit:"+it.id;
         if(open && open.key===key){
           body.append(editor({ key, title:"Edit "+it.name, withName:false, saveLabel:"Save",
-            initial:{ day:it.day, start:hhmm(it.start_time), end:hhmm(it.end_time), note:it.note||"" },
+            meals: it.category==="restaurant" || it.category==="other",
+            initial:{ day:it.day, when: it.start_time ? "exact" : (it.slot||""), start:hhmm(it.start_time), end:hhmm(it.end_time), note:it.note||"" },
             onSave:async(v)=>{
-              const upd={ day:v.day, start_time:v.start_time, end_time:v.end_time, note:v.note };
-              if(v.day!==it.day || (v.start_time||"")!==hhmm(it.start_time)) upd.position=chronoPosition(v.day, v.start_time, it.id);
+              const upd={ day:v.day, start_time:v.start_time, end_time:v.end_time, slot:v.slot, note:v.note };
+              const oldT=eff(it), newT=eff({ start_time: v.start_time ? v.start_time+":00" : null, slot:v.slot });
+              if(v.day!==it.day || newT!==oldT) upd.position=chronoPosition(v.day, newT, it.id);
               const { error } = await sb.from("schedule_items").update(upd).eq("id",it.id);
               if(error) return errMsg(error);
               setStatus("Updated "+it.name+"."); return true;
@@ -495,9 +532,8 @@ body.is-dragging, body.is-dragging *{cursor:grabbing !important;user-select:none
       item.append(row);
       if(open && open.key===key){
         item.append(editor({ key, title:"Schedule "+p.name, withName:false, saveLabel:"Add to schedule", initial:{},
-          onSave:(v)=>insertItem({ place_id:p.id, name:p.name, category:["attraction","restaurant","location"].includes(p.category)?p.category:"other",
-            neighborhood:p.neighborhood||"", address:p.address||"", maps_url:p.maps_url||null,
-            day:v.day, start_time:v.start_time, end_time:v.end_time, note:v.note }) }));
+          meals: p.category==="restaurant",
+          onSave:(v)=>insertItem({ ...placeRec(p), day:v.day, start_time:v.start_time, end_time:v.end_time, slot:v.slot, note:v.note }) }));
       }
       wrap.append(item);
     }
@@ -507,8 +543,9 @@ body.is-dragging, body.is-dragging *{cursor:grabbing !important;user-select:none
     const slot=$("customSlot"); slot.replaceChildren();
     if(open && open.key==="custom"){
       slot.append(editor({ key:"custom", title:"Add a custom item", withName:true, saveLabel:"Add to schedule", initial:{},
+        meals: true,
         onSave:(v)=>insertItem({ place_id:null, name:v.name, category:"other", neighborhood:"", address:"", maps_url:null,
-          day:v.day, start_time:v.start_time, end_time:v.end_time, note:v.note }) }));
+          day:v.day, start_time:v.start_time, end_time:v.end_time, slot:v.slot, note:v.note }) }));
     }
   }
   $("customBtn").onclick=()=>openEditor("custom");
@@ -541,7 +578,7 @@ body.is-dragging, body.is-dragging *{cursor:grabbing !important;user-select:none
     target.classList.remove("flash"); void target.offsetWidth; target.classList.add("flash");
     target.addEventListener("animationend",()=>target.classList.remove("flash"),{once:true});
     if(fromKeyboard){ const h=target.querySelector(".handle"); if(h) h.focus({preventScroll:true}); }
-    setStatus(p.name+" is on "+fmtDay(it.day)+(it.start_time?" at "+fmtTime(it.start_time):"")+(occ.length>1?" ("+(k+1)+" of "+occ.length+")":"")+".");
+    setStatus(p.name+" is on "+fmtDay(it.day)+(it.start_time?" at "+fmtTime(it.start_time):it.slot&&SLOT[it.slot]?" ("+SLOT[it.slot].label.toLowerCase()+")":"")+(occ.length>1?" ("+(k+1)+" of "+occ.length+")":"")+".");
   }
 
   // ---------- drag and drop (pointer events: mouse, touch, pen) ----------
@@ -633,7 +670,7 @@ body.is-dragging, body.is-dragging *{cursor:grabbing !important;user-select:none
       const idx=ids.indexOf("__new__");
       render();
       const { data, error } = await sb.from("schedule_items")
-        .insert({ ...placeRec(p), day, start_time:null, end_time:null, note:"", position:idx+1 }).select("*").single();
+        .insert({ ...placeRec(p), day, start_time:null, end_time:null, slot:"", note:"", position:idx+1 }).select("*").single();
       if(error){ setStatus(errMsg(error)); }
       else{
         items.push(data); ids[idx]=data.id;
@@ -667,8 +704,8 @@ body.is-dragging, body.is-dragging *{cursor:grabbing !important;user-select:none
 
   async function sortByTime(day){
     const list=sortDay(dayItems(day));
-    const timed=list.filter(i=>i.start_time).sort((a,b)=>a.start_time<b.start_time?-1:a.start_time>b.start_time?1:0);
-    let k=0; const order=list.map(i=>i.start_time ? timed[k++].id : i.id);   // "Anytime" items keep their slots
+    const timed=list.filter(i=>eff(i)).sort((a,b)=>eff(a)<eff(b)?-1:eff(a)>eff(b)?1:0);
+    let k=0; const order=list.map(i=>eff(i) ? timed[k++].id : i.id);   // "Anytime" items keep their slots
     if(await applyOrder(day, order)) setStatus("Sorted "+fmtDay(day)+" by time.");
   }
 
