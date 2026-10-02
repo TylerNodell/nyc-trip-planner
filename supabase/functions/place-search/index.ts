@@ -1,9 +1,11 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import { createClient } from "jsr:@supabase/supabase-js@2";
 
 // Deployed to project jkehxprjvrivlzkgkvgw as "place-search".
 // POST { query }    -> place name search (Google Places API (New) Text Search, biased to NYC),
 //                      or a pasted Google Maps link (resolved server-side, then matched)
 // POST { place_id } -> one place by Google place ID
+// POST { refresh: [uuid,...] } -> re-fetch opening hours for places on the list (max 25, skips ones checked in the last 12h)
 // Requires the secret GOOGLE_PLACES_API_KEY.
 
 const CORS = {
@@ -16,7 +18,9 @@ const FIELDS = [
   "id", "displayName", "formattedAddress", "shortFormattedAddress", "primaryType",
   "primaryTypeDisplayName", "types", "googleMapsUri", "addressComponents", "businessStatus",
   "rating", "userRatingCount", "editorialSummary", "generativeSummary", "location",
+  "regularOpeningHours", "currentOpeningHours",
 ];
+const HOURS_MASK = "id,regularOpeningHours,currentOpeningHours";
 const SEARCH_MASK = FIELDS.map((f) => "places." + f).join(",");
 const DETAILS_MASK = FIELDS.join(",");
 
@@ -86,9 +90,22 @@ function toMatch(p: any) {
     summary: (editorial || generative || "").slice(0, 1000),
     summary_ai: !editorial && !!generative,
     lat: typeof p.location?.latitude === "number" ? p.location.latitude : null,
+    ...hoursOf(p),
     lng: typeof p.location?.longitude === "number" ? p.location.longitude : null,
     closed: p.businessStatus === "CLOSED_PERMANENTLY",
     temporarily_closed: p.businessStatus === "CLOSED_TEMPORARILY",
+  };
+}
+
+// deno-lint-ignore no-explicit-any
+function hoursOf(p: any) {
+  const reg = p.regularOpeningHours;
+  const cur = p.currentOpeningHours;
+  return {
+    hours: Array.isArray(reg?.periods) ? reg.periods : null,
+    hours_text: Array.isArray(reg?.weekdayDescriptions) ? reg.weekdayDescriptions : null,
+    hours_current: Array.isArray(cur?.periods) ? cur.periods : null,
+    hours_checked_at: new Date().toISOString(),
   };
 }
 
@@ -209,6 +226,29 @@ Deno.serve(async (req: Request) => {
   try { body = await req.json(); } catch { return json({ error: "bad_request" }, 400); }
 
   try {
+    if (Array.isArray(body?.refresh)) {
+      const ids = body.refresh.filter((x: unknown) => typeof x === "string" && /^[0-9a-f-]{36}$/i.test(x as string)).slice(0, 25);
+      if (!ids.length) return json({ updated: 0 });
+      const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+      const cutoff = new Date(Date.now() - 12 * 3600 * 1000).toISOString();
+      const { data: rows, error } = await admin.from("places")
+        .select("id, google_place_id, hours_checked_at")
+        .in("id", ids).not("google_place_id", "is", null)
+        .or(`hours_checked_at.is.null,hours_checked_at.lt.${cutoff}`);
+      if (error) { console.error(error); return json({ error: "server_error" }, 500); }
+      let updated = 0;
+      await Promise.all((rows ?? []).map(async (r) => {
+        const res = await fetch(`https://places.googleapis.com/v1/places/${encodeURIComponent(r.google_place_id)}`, {
+          headers: { "X-Goog-Api-Key": key, "X-Goog-FieldMask": HOURS_MASK },
+        });
+        if (!res.ok) { console.error("hours refresh", res.status, await res.text()); return; }
+        const h = hoursOf(await res.json());
+        const { error: ue } = await admin.from("places").update(h).eq("id", r.id);
+        if (!ue) updated++;
+      }));
+      return json({ updated });
+    }
+
     const placeId = typeof body?.place_id === "string" ? body.place_id.trim() : "";
     if (placeId) {
       if (!/^[A-Za-z0-9_-]{10,300}$/.test(placeId)) return json({ error: "bad_request" }, 400);

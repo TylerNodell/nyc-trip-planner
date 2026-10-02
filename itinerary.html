@@ -51,7 +51,8 @@ main{max-width:1100px;margin:0 auto;padding:20px;display:grid;grid-template-colu
 .section-head h2{margin:0;font-size:22px;font-weight:800;letter-spacing:-.01em}
 .count{margin-left:auto;color:var(--muted);font-weight:600}
 
-.day{margin-bottom:22px;scroll-margin-top:12px}
+.day{margin-bottom:22px;scroll-margin-top:86px}   /* clear the sticky day strip */
+.entry{scroll-margin-top:90px}
 .day.is-empty{margin-bottom:10px}
 .day.is-empty .day-head h3{color:var(--muted)}
 .empty-note{color:var(--muted);font-size:14px;padding:4px 0 10px;border-bottom:1px solid var(--line)}
@@ -111,6 +112,27 @@ body.is-dragging, body.is-dragging *{cursor:grabbing !important;user-select:none
 .area-name{font-weight:800;font-size:15px}
 .area-meta{margin-left:auto;color:var(--muted);font-size:13px;white-space:nowrap}
 .day-areas{display:block;color:var(--muted);font-size:13px;margin:-2px 0 4px}
+.hours{font-size:13px;color:var(--muted);margin-top:2px}
+.soft{font-size:13px;color:var(--muted);font-style:italic;margin-top:2px}
+.day-chips{display:flex;flex-wrap:wrap;gap:5px;margin:2px 0 6px}
+.dchip{font-size:12px;font-weight:700;padding:1px 8px;border-radius:999px;border:1px solid var(--line);color:var(--muted);background:var(--panel)}
+.dchip.warn{border-color:var(--food);color:var(--food)}
+.strip{position:sticky;top:0;z-index:5;display:flex;gap:4px;overflow-x:auto;padding:8px 0 10px;margin-bottom:4px;background:var(--bg);scrollbar-width:thin}
+.sday{all:unset;box-sizing:border-box;cursor:pointer;flex:1 0 42px;min-width:42px;display:grid;justify-items:center;gap:1px;padding:5px 2px 6px;border-radius:7px;border:1px solid var(--line);background:var(--panel);position:relative}
+.sday:hover{border-color:var(--ink)}
+.sday:focus-visible{outline:3px solid var(--focus);outline-offset:1px}
+.sday .wd{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.03em}
+.sday .dn{font-size:16px;font-weight:800;line-height:1.1}
+.sday .bar{width:70%;height:4px;border-radius:2px;background:var(--line)}
+.sday.l1 .bar{background:#9DB4E0} .sday.l2 .bar{background:#4F7AD0} .sday.l3 .bar{background:var(--attr)}
+.sday .dot{position:absolute;top:4px;right:5px;width:7px;height:7px;border-radius:50%;background:var(--food)}
+.sday.hol .wd{color:var(--food)}
+.day-head.flash{animation:flash 1.6s ease-out;border-radius:6px}
+.pool-row{display:flex;gap:6px;margin:6px 0 2px}
+.pool-row input,.pool-row select{min-width:0;flex:1;padding:7px 9px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink);font-size:14px}
+.pool-row select{flex:0 1 46%}
+.near-head{font-size:13px;color:var(--muted);margin:8px 0 2px}
+.dist{font-size:13px;color:var(--attr);font-weight:600}
 .prow{display:flex;gap:10px;align-items:center}
 .prow .bullet{font-size:22px}
 .pbody{flex:1;min-width:0}
@@ -167,6 +189,10 @@ body.is-dragging, body.is-dragging *{cursor:grabbing !important;user-select:none
     <div class="pool-tools">
       <label><input type="checkbox" id="hideScheduled"> Hide scheduled</label>
       <button class="link" type="button" id="customBtn">+ Custom item</button>
+    </div>
+    <div class="pool-row">
+      <input id="poolSearch" type="search" placeholder="Search your list…" aria-label="Search your list" autocomplete="off">
+      <select id="nearDay" aria-label="Sort by distance to a day's plans"><option value="">Group by area</option></select>
     </div>
     <div id="catFilter" class="chips" role="group" aria-label="Filter by category"></div>
     <div id="customSlot"></div>
@@ -257,7 +283,7 @@ body.is-dragging, body.is-dragging *{cursor:grabbing !important;user-select:none
   // ---------- data ----------
   async function load(force){
     const [pr, sr, vr, cr] = await Promise.all([
-      sb.from("places").select("id,name,category,neighborhood,area,borough,lat,address,maps_url").is("deleted_at",null).order("created_at"),
+      sb.from("places").select("id,name,category,type,neighborhood,area,borough,lat,lng,address,maps_url,google_place_id,hours,hours_text,hours_current,hours_checked_at").is("deleted_at",null).order("created_at"),
       sb.from("schedule_items").select("*").is("deleted_at",null).order("day").order("position").order("start_time",{nullsFirst:true}).order("created_at"),
       sb.from("votes").select("place_id,voter_id,voter_name,value"),
       sb.from("comments").select("*").not("schedule_item_id","is",null)
@@ -403,6 +429,9 @@ body.is-dragging, body.is-dragging *{cursor:grabbing !important;user-select:none
     $("schedCount").textContent=items.length;
     const byDay=new Map(tripDays().map(d=>[d,[]]));
     for(const it of items){ if(!byDay.has(it.day)) byDay.set(it.day,[]); byDay.get(it.day).push(it); }
+    const placeById=new Map(places.map(p=>[p.id,p]));
+    const sums=new Map([...byDay].map(([d,l])=>[d,daySummary(l,placeById)]));
+    wrap.append(renderStrip(byDay, sums));
     for(const day of [...byDay.keys()].sort()){
       const list=sortDay(byDay.get(day));
       const sec=el("section","day"+(list.length?"":" is-empty")); sec.id="day-"+day;
@@ -416,6 +445,14 @@ body.is-dragging, body.is-dragging *{cursor:grabbing !important;user-select:none
       const byId=new Map(places.map(p=>[p.id,p]));
       const dayAreas=[...new Set(list.map(i=>byId.get(i.place_id)&&byId.get(i.place_id).area).filter(Boolean))];
       if(dayAreas.length) sec.append(el("span","day-areas",(dayAreas.length===1?"Area: ":"Areas: ")+dayAreas.join(" → ")));
+      const sm=sums.get(day), chips=el("div","day-chips");
+      for(const [c,lbl] of [["attraction","sight"],["restaurant","food stop"],["location","spot"],["other","other"]]){
+        const n=sm.counts[c]||0; if(n) chips.append(el("span","dchip",n+" "+lbl+(n>1&&c!=="other"?"s":"")));
+      }
+      if(!sm.lunch) chips.append(el("span","dchip warn","No lunch yet"));
+      if(!sm.dinner) chips.append(el("span","dchip warn","No dinner yet"));
+      if(sm.hoursIssues) chips.append(el("span","dchip warn",sm.hoursIssues+" hours "+(sm.hoursIssues===1?"conflict":"conflicts")));
+      sec.append(chips);
       // overlap detection among timed items
       const timed=list.filter(i=>i.start_time);
       const overlaps=new Map();
@@ -448,6 +485,12 @@ body.is-dragging, body.is-dragging *{cursor:grabbing !important;user-select:none
         if(it.note) body.append(el("div","note",it.note));
         if(overlaps.has(it.id)) body.append(el("div","warn","Overlaps with "+overlaps.get(it.id)));
         if(ooo.has(it.id)) body.append(el("div","warn","Earlier than something above it"));
+        const hc=hoursCheck(it, placeById.get(it.place_id));
+        if(hc){
+          if(hc.warn) body.append(el("div","warn","🕒 "+hc.warn+(hc.label?" · "+hc.label:"")));
+          else if(hc.label) body.append(el("div","hours","🕒 "+hc.label));
+          if(hc.soft) body.append(el("div","soft",hc.soft));
+        }
         const key="edit:"+it.id;
         if(open && open.key===key){
           body.append(editor({ key, title:"Edit "+it.name, withName:false, saveLabel:"Save",
@@ -500,15 +543,29 @@ body.is-dragging, body.is-dragging *{cursor:grabbing !important;user-select:none
     const counts=new Map();
     for(const it of items) if(it.place_id) counts.set(it.place_id,(counts.get(it.place_id)||0)+1);
     const rank=p=>-score(p);
-    const base=places.filter(p=>score(p)>=0).filter(p=>!(hide && counts.get(p.id)));
+    const q=($("poolSearch").value||"").trim().toLowerCase();
+    const base=places.filter(p=>score(p)>=0).filter(p=>!(hide && counts.get(p.id)))
+      .filter(p=>!q || [p.name,p.type,p.neighborhood,p.area].some(x=>x && x.toLowerCase().includes(q)));
     renderCatFilter(base);
+    renderNearOptions();
     const list=base.filter(p=>!catSel.size || catSel.has(poolCat(p)))
       .sort((a,b)=>rank(a)-rank(b) || (CAT_ORDER[a.category]??9)-(CAT_ORDER[b.category]??9) || a.name.localeCompare(b.name));
     $("poolCount").textContent=list.length;
     if(!list.length){
       wrap.append(el("div","empty", !places.length ? "Your list is empty. Add places on the Places page first."
-        : base.length ? "Nothing here for this filter." : "Everything's scheduled."));
+        : q ? "Nothing matches “"+q+"”." : base.length ? "Nothing here for this filter." : "Everything's scheduled."));
       return;
+    }
+    if(nearDay){
+      const stops=dayStops(nearDay);
+      if(stops.length){
+        const already=new Set(items.filter(i=>i.day===nearDay && i.place_id).map(i=>i.place_id));
+        const ranked=list.filter(p=>!already.has(p.id)).map(p=>({ p, near:nearest(p,stops) })).sort((a,b)=>(a.near?a.near.mi:999)-(b.near?b.near.mi:999));
+        $("poolCount").textContent=ranked.length;
+        wrap.append(el("div","near-head","Closest to "+fmtDay(nearDay)+"'s plans"));
+        renderPoolItems(wrap, ranked.map(r=>r.p), counts, new Map(ranked.map(r=>[r.p.id,r.near])));
+        return;
+      }
     }
     // Group by area (community district), ordered by borough then south to north.
     const groups=new Map();
@@ -535,7 +592,7 @@ body.is-dragging, body.is-dragging *{cursor:grabbing !important;user-select:none
     }
   }
 
-  function renderPoolItems(wrap, list, counts){
+  function renderPoolItems(wrap, list, counts, nearMap){
     for(const p of list){
       const item=el("div","pitem");
       const row=el("div","prow");
@@ -554,7 +611,10 @@ body.is-dragging, body.is-dragging *{cursor:grabbing !important;user-select:none
         nm.append(tg);
       }
       body.append(nm);
-      if(p.neighborhood && p.neighborhood!==p.area) body.append(el("div","meta",p.neighborhood));
+      const nr=nearMap && nearMap.get(p.id);
+      if(nr) body.append(el("div","dist", nr.mi<0.05 ? "Same spot as "+nr.to : fmtMi(nr.mi)+" · ~"+walkMin(nr.mi)+" min walk from "+nr.to));
+      if(p.neighborhood && p.neighborhood!==p.area) body.append(el("div","meta",p.neighborhood+(nearMap&&p.area?" · "+p.area:"")));
+      else if(nearMap && p.area) body.append(el("div","meta",p.area));
       row.append(body);
       const key="new:"+p.id;
       if(!(open && open.key===key)){
@@ -802,7 +862,170 @@ body.is-dragging, body.is-dragging *{cursor:grabbing !important;user-select:none
     purge: async(r)=>{ T.ok(await sb.from("schedule_items").delete().eq("id",r.id)); }
   }));
 
-  load().then(()=>T.maybeAskName());
+  // ---------- opening hours ----------
+  const HOLIDAYS={ "2026-12-24":"Christmas Eve", "2026-12-25":"Christmas Day", "2026-12-31":"New Year's Eve", "2027-01-01":"New Year's Day" };
+  // Rough windows for parts of day / meals (minutes after midnight), used to check against hours.
+  const WIN={ breakfast:[420,630], brunch:[600,840], lunch:[690,870], snack:[840,1020], dinner:[1050,1290], dessert:[1140,1380],
+              morning:[480,720], afternoon:[720,1020], evening:[1020,1260], night:[1260,1440] };
+  const WEEKDAYS=["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+  function dow(d){ return new Date(d+"T12:00:00Z").getUTCDay(); }
+  function addDays(d,n){ const x=new Date(d+"T12:00:00Z"); x.setUTCDate(x.getUTCDate()+n); return x.toISOString().slice(0,10); }
+  function ymd(o){ return o && o.year ? o.year+"-"+String(o.month).padStart(2,"0")+"-"+String(o.day).padStart(2,"0") : null; }
+  function mm(h,mi){ return (h||0)*60+(mi||0); }
+  function toMin(t){ const [h,mi]=t.split(":").map(Number); return h*60+mi; }
+  function nyDate(ts){ return new Intl.DateTimeFormat("en-CA",{timeZone:"America/New_York"}).format(new Date(ts)); }
+  function fmtMin(x){
+    if(x>=1440) return "midnight";
+    const h=Math.floor(x/60), mi=x%60, ap=h>=12?"PM":"AM", hh=h%12||12;
+    if(x===720) return "noon";
+    return hh+(mi?":"+String(mi).padStart(2,"0"):"")+" "+ap;
+  }
+  function fmtIv(iv){
+    if(!iv.length) return "";
+    if(iv.length===1 && iv[0][0]===0 && iv[0][1]>=1440) return "Open 24 hours";
+    return "Open "+iv.slice().sort((a,b)=>a[0]-b[0]).map(([a,b])=>fmtMin(a)+"–"+fmtMin(b)).join(", ");
+  }
+  // Open intervals on a given date. Date-specific hours (which include holidays) win when we have them.
+  function intervalsFor(place, day){
+    if(!place) return null;
+    if(Array.isArray(place.hours_current) && place.hours_checked_at){
+      const from=nyDate(place.hours_checked_at);
+      if(day>=from && day<=addDays(from,6)){
+        const out=[];
+        for(const p of place.hours_current){
+          if(!p.open) continue;
+          if(!p.close) return { iv:[[0,1440]], exact:true };
+          const od=ymd(p.open.date), cd=ymd(p.close.date), os=mm(p.open.hour,p.open.minute), cs=mm(p.close.hour,p.close.minute);
+          if(od===day) out.push([os, cd===day ? cs : 1440]);
+          else if(cd===day) out.push([0, cs]);
+        }
+        return { iv:out, exact:true };
+      }
+    }
+    if(!Array.isArray(place.hours) || !place.hours.length) return null;
+    const d=dow(day), out=[];
+    for(const p of place.hours){
+      if(!p.open) continue;
+      if(!p.close) return { iv:[[0,1440]], exact:false };
+      const od=p.open.day, cd=p.close.day, os=mm(p.open.hour,p.open.minute), cs=mm(p.close.hour,p.close.minute);
+      const same = od===cd && cs>os;
+      if(od===d) out.push([os, same ? cs : 1440]);
+      else if(!same && cd===d) out.push([0, cs]);
+    }
+    return { iv:out, exact:false };
+  }
+  function regularText(place, day){
+    const t=Array.isArray(place.hours_text) ? place.hours_text[(dow(day)+6)%7] : "";   // Google lists Monday first
+    if(!t) return "";
+    const body=t.replace(/^[^:]+:\s*/,"");
+    if(/24 hours/i.test(body)) return "Open 24 hours";
+    if(/closed/i.test(body)) return "";
+    return "Open "+body.replace(/\s*–\s*/g,"–").replace(/:00/g,"");
+  }
+  function hoursCheck(it, place){
+    const r=intervalsFor(place, it.day); if(!r) return null;
+    const hol=HOLIDAYS[it.day];
+    let label = r.exact ? fmtIv(r.iv) : (regularText(place,it.day) || fmtIv(r.iv));
+    if(/Open Closed/i.test(label)) label="";
+    let warn="";
+    if(!r.iv.length) warn = r.exact ? "Closed "+(hol?"on "+hol:"that day") : "Usually closed on "+WEEKDAYS[dow(it.day)]+"s";
+    else if(it.start_time){
+      const s=toMin(it.start_time), e=it.end_time?toMin(it.end_time):null;
+      if(!r.iv.some(([a,b])=>s>=a && s<b)) warn="Closed at "+fmtTime(it.start_time);
+      else if(e && !r.iv.some(([a,b])=>s>=a && e<=b)) warn="Closes before "+fmtTime(it.end_time);
+    }else if(it.slot && WIN[it.slot]){
+      const [a,b]=WIN[it.slot];
+      if(!r.iv.some(([x,y])=>x<b && y>a)) warn="Closed around "+SLOT[it.slot].label.toLowerCase();
+    }
+    const soft = (!r.exact && hol) ? hol+": holiday hours may differ. Exact hours show up here about a week before." : "";
+    return { label, warn, soft };
+  }
+
+  // ---------- day summaries + trip strip ----------
+  function daySummary(list, placeById){
+    const counts={}; let lunch=false, dinner=false, hoursIssues=0;
+    for(const it of list){
+      const c=["attraction","restaurant","location"].includes(it.category)?it.category:"other";
+      counts[c]=(counts[c]||0)+1;
+      if(it.category==="restaurant"){
+        const t=it.start_time?toMin(it.start_time):null;
+        if(["lunch","brunch"].includes(it.slot) || (t!=null && t>=660 && t<900)) lunch=true;
+        if(it.slot==="dinner" || (t!=null && t>=1020 && t<1350)) dinner=true;
+      }
+      const hc=hoursCheck(it, placeById.get(it.place_id)); if(hc && hc.warn) hoursIssues++;
+    }
+    return { n:list.length, counts, lunch, dinner, hoursIssues };
+  }
+  function renderStrip(byDay, sums){
+    const strip=el("nav","strip"); strip.setAttribute("aria-label","Trip days");
+    for(const day of tripDays()){
+      const sm=sums.get(day)||{n:0};
+      const b=el("button","sday"+(sm.n>=5?" l3":sm.n>=3?" l2":sm.n>=1?" l1":"")+(HOLIDAYS[day]?" hol":"")); b.type="button";
+      const dd=new Date(day+"T12:00:00Z");
+      b.append(el("span","wd",dd.toLocaleDateString(undefined,{weekday:"short",timeZone:"UTC"})), el("span","dn",String(dd.getUTCDate())), el("span","bar"));
+      const issues = sm.n && (!sm.lunch || !sm.dinner || sm.hoursIssues);
+      if(issues) b.append(el("span","dot"));
+      const parts=[fmtDay(day)+(HOLIDAYS[day]?" ("+HOLIDAYS[day]+")":""), sm.n ? sm.n+(sm.n===1?" item":" items") : "nothing planned"];
+      if(sm.n && !sm.dinner) parts.push("no dinner yet");
+      if(sm.n && !sm.lunch) parts.push("no lunch yet");
+      if(sm.hoursIssues) parts.push(sm.hoursIssues+" hours conflict"+(sm.hoursIssues>1?"s":""));
+      b.title=parts.join(" · "); b.setAttribute("aria-label",parts.join(", "));
+      b.onclick=()=>{
+        const sec=$("day-"+day); if(!sec) return;
+        sec.scrollIntoView({behavior:window.matchMedia("(prefers-reduced-motion: reduce)").matches?"auto":"smooth", block:"start"});
+        const h=sec.querySelector(".day-head"); waitForScrollEnd().then(()=>{ h.classList.remove("flash"); void h.offsetWidth; h.classList.add("flash"); });
+      };
+      strip.append(b);
+    }
+    return strip;
+  }
+
+  // ---------- near this day ----------
+  let nearDay="";
+  function placeLatLng(p){ return p && typeof p.lat==="number" && typeof p.lng==="number" ? [p.lat,p.lng] : null; }
+  function dayStops(day){
+    const byId=new Map(places.map(p=>[p.id,p]));
+    return items.filter(i=>i.day===day && i.place_id).map(i=>({ name:i.name, ll:placeLatLng(byId.get(i.place_id)) })).filter(s=>s.ll);
+  }
+  function miles([a,b],[c,d]){
+    const R=3958.8, r=x=>x*Math.PI/180, dLat=r(c-a), dLng=r(d-b);
+    const h=Math.sin(dLat/2)**2+Math.cos(r(a))*Math.cos(r(c))*Math.sin(dLng/2)**2;
+    return 2*R*Math.asin(Math.sqrt(h));
+  }
+  function nearest(p, stops){
+    const ll=placeLatLng(p); if(!ll) return null;
+    let best=null; for(const s of stops){ const mi=miles(ll,s.ll); if(!best || mi<best.mi) best={ mi, to:s.name }; }
+    return best;
+  }
+  function fmtMi(mi){ return mi<0.1 ? Math.round(mi*5280/10)*10+" ft" : (mi<10?mi.toFixed(1):Math.round(mi))+" mi"; }
+  function walkMin(mi){ return Math.max(1, Math.round(mi*1.25*20)); }   // street grid ≈ 1.25× straight line, 3 mph
+  function renderNearOptions(){
+    const sel=$("nearDay"); const cur=nearDay;
+    const days=[...new Set(items.map(i=>i.day))].sort().filter(d=>dayStops(d).length);
+    sel.replaceChildren(); const o0=el("option","","Group by area"); o0.value=""; sel.append(o0);
+    for(const d of days){ const o=el("option","","Near "+fmtDay(d).replace(/^\w+day, /,(m)=>m.slice(0,3)+", ")); o.value=d; sel.append(o); }
+    if(cur && !days.includes(cur)) nearDay="";
+    sel.value=nearDay;
+  }
+  $("nearDay").addEventListener("change",e=>{ nearDay=e.target.value; renderPool(); });
+  let searchTimer=null;
+  $("poolSearch").addEventListener("input",()=>{ clearTimeout(searchTimer); searchTimer=setTimeout(()=>renderPool(),120); });
+  $("poolSearch").dataset.focusKey="pool-search";
+
+  // ---------- keep hours fresh as dates approach (exact holiday hours appear ~a week out) ----------
+  const refreshed=new Set();
+  async function refreshHoursSoon(){
+    const today=todayNY(), soon=addDays(today,7);
+    const ids=[...new Set(items.filter(i=>i.place_id && i.day>=today && i.day<=soon).map(i=>i.place_id))].filter(id=>{
+      const p=places.find(x=>x.id===id); if(!p || !p.google_place_id || refreshed.has(id)) return false;
+      return !p.hours_checked_at || Date.now()-new Date(p.hours_checked_at).getTime() > 12*3600e3;
+    }).slice(0,25);
+    if(!ids.length) return;
+    ids.forEach(id=>refreshed.add(id));
+    try{ await sb.functions.invoke("place-search",{ body:{ refresh:ids } }); }catch(e){}   // updates arrive via live sync
+  }
+
+  load().then(()=>{ T.maybeAskName(); refreshHoursSoon(); });
 })();
 </script>
 </body>
