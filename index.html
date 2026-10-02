@@ -232,7 +232,9 @@ main{max-width:980px;margin:0 auto;padding:20px}
       address:p.address||"", google_place_id:p.google_place_id||null, maps_url:p.maps_url||null,
       rating:p.rating??null, rating_count:p.rating_count??null,
       summary:(p.summary||"").slice(0,1000), summary_ai:!!p.summary_ai,
-      lat:p.lat??null, lng:p.lng??null, ...T.byNew()
+      lat:p.lat??null, lng:p.lng??null,
+      hours:p.hours??null, hours_text:p.hours_text??null, hours_current:p.hours_current??null, hours_checked_at:p.hours_checked_at??null,
+      ...T.byNew()
     };
     const { data:ins, error } = await sb.from("places").insert(rec).select("id").single();
     if(error){
