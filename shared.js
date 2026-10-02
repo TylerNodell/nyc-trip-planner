@@ -65,14 +65,52 @@
     document.body.append(nameDlg);
     const nameInput = nameDlg.querySelector("input");
     let nameResolve = null;
-    nameDlg.addEventListener("close", ()=>{
+    // "Is that you on another device?" — shown when a picked name is already in use elsewhere.
+    const sameDlg = el("dialog","dlg");
+    sameDlg.innerHTML =
+      '<form method="dialog" class="dlg-body">'+
+      '<h2>Is that you?</h2><p class="same-msg"></p>'+
+      '<p>If yes, this device joins them: your votes and comments come together under one name.</p>'+
+      '<div class="dlg-btns"><button value="yes" class="btn btn-primary">Yes, that\'s me</button>'+
+      '<button value="no" class="btn btn-ghost">No, someone else</button></div></form>';
+    document.body.append(sameDlg);
+    const askSame = (other)=>new Promise(res=>{
+      const since = new Date(other.first_seen).toLocaleDateString(undefined,{ month:"short", day:"numeric" });
+      sameDlg.querySelector(".same-msg").textContent = "Someone already goes by “"+other.name+"” (on another phone or computer since "+since+"). Is that you on another device?";
+      sameDlg.returnValue = "";
+      sameDlg.addEventListener("close", ()=>res(sameDlg.returnValue==="yes"), { once:true });
+      sameDlg.showModal();
+    });
+    async function registerName(){
+      if(!name) return;
+      await sb.from("people").upsert({ device_id:id, name, updated_at:new Date().toISOString() }, { onConflict:"device_id" });
+    }
+    // Returns true if this device was merged into another (the page reloads).
+    async function checkSameName(v){
+      const { data } = await sb.from("people").select("device_id,name,first_seen").neq("device_id", id);
+      const others = (data||[]).filter(p=>p.name.trim().toLowerCase()===v.trim().toLowerCase())
+                               .sort((a,b)=>a.first_seen<b.first_seen?-1:1);
+      if(!others.length) return false;
+      if(!(await askSame(others[0]))) return false;
+      const target = others[0].device_id;
+      const { error } = await sb.rpc("merge_device", { p_from:id, p_to:target });
+      if(error){ api.toast("Couldn't merge with the other device. Try again."); return false; }
+      ls.set(ID_KEY, target); ls.set(NAME_KEY, others[0].name); ls.set(ASKED_KEY,"1");
+      api.toast("Merged. This device is now “"+others[0].name+"” too.");
+      setTimeout(()=>location.reload(), 900);
+      return true;
+    }
+    nameDlg.addEventListener("close", async ()=>{
+      let merged=false;
       if(nameDlg.returnValue==="save"){
         const v = nameInput.value.trim().slice(0,40);
-        if(v && v!==name){ name=v; ls.set(NAME_KEY,name); paintWho(); nameListeners.forEach(f=>f(name)); }
+        if(v && v.toLowerCase()!==name.toLowerCase()) merged = await checkSameName(v);
+        if(!merged && v && v!==name){ name=v; ls.set(NAME_KEY,name); paintWho(); nameListeners.forEach(f=>f(name)); await registerName(); }
       }
       ls.set(ASKED_KEY,"1");
       if(nameResolve){ nameResolve(api.name()); nameResolve=null; }
     });
+    registerName();   // keep this device listed under its name
     api.askName = () => new Promise(res=>{
       nameResolve = res; nameInput.value = name; nameDlg.returnValue = "";
       nameDlg.showModal(); setTimeout(()=>nameInput.select(),0);

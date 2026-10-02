@@ -71,6 +71,25 @@ main{max-width:980px;margin:0 auto;padding:20px}
 .desc{font-size:14px;margin-top:3px;max-width:60ch}
 .ai-note{font-size:12px;color:var(--muted)}
 .resv{font-size:13px;font-weight:700;color:var(--food);margin-top:2px}
+.holiday{margin:0 0 18px;border:1px solid var(--line);border-radius:12px;background:var(--panel);padding:0 14px}
+.holiday > summary{list-style:none;cursor:pointer;display:flex;align-items:baseline;gap:10px;padding:12px 0;font-weight:800;font-size:17px}
+.holiday > summary::-webkit-details-marker{display:none}
+.holiday > summary::after{content:"Show";margin-left:auto;font-size:13px;font-weight:700;color:var(--attr)}
+.holiday[open] > summary::after{content:"Hide"}
+.hol-sub{font-size:13px;font-weight:500;color:var(--muted)}
+.hol-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px;padding:0 0 14px}
+.hol{border:1px solid var(--line);border-radius:10px;padding:10px 12px;display:grid;gap:4px;align-content:start}
+.hol-name{font-weight:800;display:flex;gap:7px;align-items:center}
+.hol-name .bullet{font-size:20px}
+.hol-dates{font-size:13px;font-weight:700}
+.hol-dates.short{color:var(--food)}
+.hol-tags{display:flex;gap:5px;flex-wrap:wrap}
+.hol-tag{font-size:11px;font-weight:700;padding:1px 7px;border-radius:999px;border:1px solid var(--line);color:var(--muted)}
+.hol-tag.ok{border-color:var(--loc);color:var(--loc)}
+.hol-blurb{font-size:14px}
+.hol-tip{font-size:12.5px;color:var(--muted)}
+.hol-act{display:flex;gap:10px;align-items:center;margin-top:4px;font-size:14px}
+.hol-on{font-size:13px;font-weight:700;color:var(--loc)}
 .menu{position:fixed;z-index:50;min-width:220px;max-width:300px;background:var(--panel);border:1px solid var(--line);border-radius:8px;box-shadow:0 10px 28px rgba(0,0,0,.2);padding:6px;display:grid}
 .menu[hidden]{display:none}
 .menu button{all:unset;box-sizing:border-box;padding:8px 10px;border-radius:5px;font-size:15px;cursor:pointer;color:var(--ink)}
@@ -117,7 +136,7 @@ main{max-width:980px;margin:0 auto;padding:20px}
 .foot{margin-top:32px;color:var(--muted);font-size:13px;max-width:70ch}
 </style>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
-<link rel="stylesheet" href="shared.css?v=202610022117">
+<link rel="stylesheet" href="shared.css?v=202610022128">
 </head>
 <body>
 <header class="sign">
@@ -140,6 +159,10 @@ main{max-width:980px;margin:0 auto;padding:20px}
     <div id="candList"></div>
   </section>
 
+  <details class="holiday" id="holiday">
+    <summary>🎄 Holiday in NYC <span class="hol-sub" id="holSub"></span></summary>
+    <div class="hol-grid" id="holList"></div>
+  </details>
   <div class="view-toggle" role="group" aria-label="View">
     <button type="button" id="viewList" aria-pressed="true">List</button><button type="button" id="viewMap" aria-pressed="false">Map</button>
   </div>
@@ -176,8 +199,8 @@ main{max-width:980px;margin:0 auto;padding:20px}
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="shared.js?v=202610022117"></script>
-<script src="maps.js?v=202610022117"></script>
+<script src="shared.js?v=202610022128"></script>
+<script src="maps.js?v=202610022128"></script>
 <script>
 (function(){
   // Public client config. The anon key is meant to be public; access is controlled by row-level security.
@@ -193,7 +216,7 @@ main{max-width:980px;margin:0 auto;padding:20px}
   };
   const $ = id => document.getElementById(id);
   const statusEl = $("status");
-  let places = [], votes = [], comments = [];
+  let places = [], votes = [], comments = [], events = [];
   let tally = ()=>({ up:0, down:0, upNames:[], downNames:[], mine:0, legacy:false });
   const openThreads = new Set();
   let editing = null;   // {id, draft, fresh} for the description editor; survives live re-renders
@@ -230,15 +253,17 @@ main{max-width:980px;margin:0 auto;padding:20px}
 
   // ---------- data ----------
   async function load(force){
-    const [pr, vr, cr, hr] = await Promise.all([
+    const [pr, vr, cr, hr, er] = await Promise.all([
       sb.from("places").select("*").is("deleted_at", null).order("created_at"),
       sb.from("votes").select("place_id,voter_id,voter_name,value"),
       sb.from("comments").select("*").not("place_id","is",null),
-      sb.from("trip_settings").select("value").eq("key","home").maybeSingle()
+      sb.from("trip_settings").select("value").eq("key","home").maybeSingle(),
+      sb.from("seasonal_events").select("*").order("sort")
     ]);
     if(pr.error){ setStatus("Couldn't load the list. Refresh to try again."); return; }
     places = pr.data; votes = vr.data||[]; comments = cr.data||[];
     home = hr && hr.data ? hr.data.value : null;
+    events = er && er.data || [];
     tally = T.tally(votes);
     if(editing && !places.some(x=>x.id===editing.id)) editing=null;
     // Don't redraw under someone mid-typing; catch up when they leave the field.
@@ -257,6 +282,7 @@ main{max-width:980px;margin:0 auto;padding:20px}
       summary:(p.summary||"").slice(0,1000), summary_ai:!!p.summary_ai,
       lat:p.lat??null, lng:p.lng??null,
       hours:p.hours??null, hours_text:p.hours_text??null, hours_current:p.hours_current??null, hours_checked_at:p.hours_checked_at??null,
+      event_id:p.event_id??null, needs_booking:!!p.needs_booking,
       ...T.byNew()
     };
     const { data:ins, error } = await sb.from("places").insert(rec).select("id").single();
@@ -502,7 +528,68 @@ main{max-width:980px;margin:0 auto;padding:20px}
   }
   $("viewList").addEventListener("click",()=>setView("list"));
   $("viewMap").addEventListener("click",()=>setView("map"));
+  // ---------- holiday events ----------
+  const TRIP_START="2026-12-18", TRIP_END="2027-01-03";
+  function shortDate(d){ const [y,m,dd]=d.split("-").map(Number); return new Date(Date.UTC(y,m-1,dd)).toLocaleDateString(undefined,{month:"short",day:"numeric",timeZone:"UTC"}); }
+  try{ if(localStorage.getItem("holiday-open")!=="0") $("holiday").open=true; }catch(e){}
+  $("holiday").addEventListener("toggle",()=>{ try{ localStorage.setItem("holiday-open",$("holiday").open?"1":"0"); }catch(e){} });
+  function renderHoliday(){
+    const list=$("holList"); list.replaceChildren();
+    const during=events.filter(e=>e.ends>=TRIP_START && e.starts<=TRIP_END);
+    $("holSub").textContent=during.length ? during.length+" seasonal things during your trip" : "";
+    for(const ev of during){
+      const card=el("div","hol");
+      const nm=el("div","hol-name"); nm.append(bullet(normCat(ev.category)), el("span","",ev.name)); card.append(nm);
+      const from=ev.starts>TRIP_START?ev.starts:TRIP_START, to=ev.ends<TRIP_END?ev.ends:TRIP_END;
+      const partial = ev.starts>TRIP_START || ev.ends<TRIP_END;
+      const span = ev.starts===ev.ends ? shortDate(ev.starts)+" only" : partial ? "During your trip: "+shortDate(from)+" – "+shortDate(to) : "Runs your whole trip";
+      card.append(el("div","hol-dates"+(partial?" short":""), span));
+      const tags=el("div","hol-tags");
+      tags.append(el("span","hol-tag"+(ev.confirmed?" ok":""), ev.confirmed ? "2026 dates confirmed" : "Usual dates · confirm closer to the trip"));
+      if(ev.needs_booking) tags.append(el("span","hol-tag","🎟 Tickets / reservation"));
+      if(ev.outdoor) tags.append(el("span","hol-tag","Outdoors"));
+      card.append(tags);
+      if(ev.blurb) card.append(el("div","hol-blurb",ev.blurb));
+      if(ev.tip) card.append(el("div","hol-tip",ev.tip));
+      const act=el("div","hol-act");
+      const onList=places.find(p=>p.event_id===ev.id);
+      if(onList) act.append(el("span","hol-on","✓ On the list"));
+      else{
+        const add=el("button","btn btn-primary btn-sm","Add to our list"); add.type="button";
+        add.onclick=()=>addEvent(ev, add);
+        act.append(add);
+      }
+      if(ev.url){ const a=el("a","link","Details"); a.href=ev.url; a.target="_blank"; a.rel="noopener"; act.append(a); }
+      card.append(act);
+      list.append(card);
+    }
+  }
+  async function addEvent(ev, btn){
+    btn.disabled=true; btn.textContent="Adding…";
+    let match=null;
+    try{
+      const { data } = await sb.functions.invoke("place-search",{ body:{ query:ev.query } });
+      match = data && data.matches && data.matches[0] || null;
+    }catch(e){}
+    const existing = match && places.find(p=>p.google_place_id && p.google_place_id===match.google_place_id);
+    if(existing){
+      const prev={ event_id:existing.event_id??null, needs_booking:!!existing.needs_booking };
+      const upd={ event_id:ev.id, needs_booking: prev.needs_booking || ev.needs_booking, ...T.by() };
+      const { error } = await sb.from("places").update(upd).eq("id", existing.id);
+      if(error){ btn.disabled=false; btn.textContent="Add to our list"; T.toast("Couldn't add that."); return; }
+      Object.assign(existing, upd); render();
+      T.toast(existing.name+" was already on the list, so it now carries the "+ev.name+" dates.", async()=>{
+        T.ok(await sb.from("places").update({ ...prev, ...T.by() }).eq("id", existing.id)); Object.assign(existing, prev); render();
+      });
+      return;
+    }
+    const base = match || { name:ev.name };
+    const ok = await addPlace({ ...base, name: match ? match.name : ev.name, category:ev.category, event_id:ev.id, needs_booking:ev.needs_booking });
+    if(!ok){ btn.disabled=false; btn.textContent="Add to our list"; }
+  }
+
   function renderAll(){
+    renderHoliday();
     renderList("attraction",$("listAttr"),$("countAttr"));
     renderList("restaurant",$("listFood"),$("countFood"));
     renderList("location",$("listLoc"),$("countLoc"));

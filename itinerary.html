@@ -145,6 +145,11 @@ body.is-dragging, body.is-dragging *{cursor:grabbing !important;user-select:none
 .area-name{font-weight:800;font-size:15px}
 .area-meta{margin-left:auto;color:var(--muted);font-size:13px;white-space:nowrap}
 .day-areas{display:block;color:var(--muted);font-size:13px;margin:-2px 0 4px}
+.wx{margin-left:auto;font-size:13px;color:var(--muted);white-space:nowrap;cursor:help}
+.wx.fc{color:var(--ink);font-weight:700}
+.day.is-empty .wx{opacity:.85}
+.sday .sw{font-size:12px;line-height:1;height:12px}
+.evt{font-size:13px;margin-top:2px;color:var(--muted)}
 .book{font-size:13px;font-weight:700;margin-top:3px}
 .book.need{color:var(--food)}
 .book.ok{color:var(--loc)}
@@ -249,7 +254,7 @@ body.is-dragging, body.is-dragging *{cursor:grabbing !important;user-select:none
 .foot{color:var(--muted);font-size:13px;margin-top:8px}
 </style>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
-<link rel="stylesheet" href="shared.css?v=202610022117">
+<link rel="stylesheet" href="shared.css?v=202610022128">
 </head>
 <body>
 <header class="sign">
@@ -290,8 +295,8 @@ body.is-dragging, body.is-dragging *{cursor:grabbing !important;user-select:none
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="shared.js?v=202610022117"></script>
-<script src="maps.js?v=202610022117"></script>
+<script src="shared.js?v=202610022128"></script>
+<script src="maps.js?v=202610022128"></script>
 <script>
 (function(){
   const SUPABASE_URL = "https://jkehxprjvrivlzkgkvgw.supabase.co";
@@ -371,19 +376,21 @@ body.is-dragging, body.is-dragging *{cursor:grabbing !important;user-select:none
 
   // ---------- data ----------
   async function load(force){
-    const [pr, sr, vr, cr, hr, rr] = await Promise.all([
-      sb.from("places").select("id,name,category,type,neighborhood,area,borough,lat,lng,address,maps_url,google_place_id,hours,hours_text,hours_current,hours_checked_at,needs_booking").is("deleted_at",null).order("created_at"),
+    const [pr, sr, vr, cr, hr, rr, er] = await Promise.all([
+      sb.from("places").select("id,name,category,type,neighborhood,area,borough,lat,lng,address,maps_url,google_place_id,hours,hours_text,hours_current,hours_checked_at,needs_booking,event_id").is("deleted_at",null).order("created_at"),
       sb.from("schedule_items").select("*").is("deleted_at",null).order("day").order("position").order("start_time",{nullsFirst:true}).order("created_at"),
       sb.from("votes").select("place_id,voter_id,voter_name,value"),
       sb.from("comments").select("*").not("schedule_item_id","is",null),
       sb.from("trip_settings").select("key,value").in("key",["home","party"]),
-      sb.from("day_routes").select("*")
+      sb.from("day_routes").select("*"),
+      sb.from("seasonal_events").select("*")
     ]);
     if(pr.error || sr.error){ setStatus("Couldn't load everything. Refresh to try again."); return; }
     places = pr.data; items = sr.data; votes = vr.data||[]; comments = cr.data||[];
     const settings=new Map((hr && hr.data || []).map(r=>[r.key, r.value]));
     home = settings.get("home") || null;
     party = settings.get("party") && Number.isInteger(settings.get("party").size) ? settings.get("party").size : null;
+    eventsById = new Map((er && er.data || []).map(e=>[e.id, e]));
     dayRoutes = new Map((rr && rr.data || []).map(r=>[r.day, r]));
     tally = T.tally(votes);
     // Don't yank an editor or comment box out from under someone mid-typing; redraw when they're done.
@@ -536,6 +543,8 @@ body.is-dragging, body.is-dragging *{cursor:grabbing !important;user-select:none
       const head=el("div","day-head");
       head.append(el("h3","",fmtDay(day)));
       if(list.length) head.append(el("span","",list.length+(list.length===1?" item":" items")));
+      const w=wxFor(day);
+      if(w){ const b=el("span","wx"+(w.kind==="forecast"?" fc":""), wxText(w)); b.title=wxTitle(w); head.append(b); }
       if(day<TRIP_START || day>TRIP_END) head.append(el("span","outside","Outside trip dates"));
       sec.append(head);
       const dl=el("div","day-list"); dl.dataset.day=day;
@@ -554,6 +563,9 @@ body.is-dragging, body.is-dragging *{cursor:grabbing !important;user-select:none
       if(trip.legs.length) chips.append(el("span","dchip","🚇 "+(trip.exact?"":"~")+fmtDur(trip.total)+" getting around"));
       if(sm.costN) chips.append(el("span","dchip","💵 "+fmtUSD(sm.pp)+(sm.ppPartial?"+":"")+" per person"));
       if(sm.toBook) chips.append(el("span","dchip warn","🎟 "+sm.toBook+" to book"));
+      if(sm.eventIssues) chips.append(el("span","dchip warn","🎄 "+sm.eventIssues+" not running that day"));
+      const wd=wxFor(day);
+      if(wd && wd.kind==="forecast" && wd.wet && sm.outdoor) chips.append(el("span","dchip warn",(wd.snow>=0.4?"🌨 Snow":"🌧 Rain")+" likely · "+sm.outdoor+" outdoor stop"+(sm.outdoor>1?"s":"")));
       sec.append(chips);
       sec.append(dayTools(day, trip, list));
       if(trip.legs.length && openMaps.has(day)){ const mc=el("div","day-map"); mc.id="map-"+day; sec.append(mc); pendingMaps.push([day, mc, trip]); }
@@ -599,6 +611,8 @@ body.is-dragging, body.is-dragging *{cursor:grabbing !important;user-select:none
           else if(hc.label) body.append(el("div","hours","🕒 "+hc.label));
           if(hc.soft) body.append(el("div","soft",hc.soft));
         }
+        const ec=eventCheck(it, placeById.get(it.place_id));
+        if(ec){ if(ec.warn) body.append(el("div","warn","🎄 "+ec.warn)); else body.append(el("div","evt","🎄 "+ec.info)); }
         if(it.booking_status==="needed") body.append(el("div","book need","🎟 Needs booking"));
         else if(it.booking_status==="booked"){
           const b=el("div","book ok","✓ Booked"+(it.confirmation?" · #"+it.confirmation:""));
@@ -1333,7 +1347,7 @@ body.is-dragging, body.is-dragging *{cursor:grabbing !important;user-select:none
 
   // ---------- day summaries + trip strip ----------
   function daySummary(list, placeById){
-    const counts={}; let lunch=false, dinner=false, hoursIssues=0, pp=0, ppPartial=false, group=0, groupPartial=false, costN=0, toBook=0;
+    const counts={}; let lunch=false, dinner=false, hoursIssues=0, eventIssues=0, outdoor=0, pp=0, ppPartial=false, group=0, groupPartial=false, costN=0, toBook=0;
     for(const it of list){
       const c=["attraction","restaurant","location","shopping"].includes(it.category)?it.category:"other";
       counts[c]=(counts[c]||0)+1;
@@ -1343,11 +1357,13 @@ body.is-dragging, body.is-dragging *{cursor:grabbing !important;user-select:none
         if(it.slot==="dinner" || (t!=null && t>=1020 && t<1350)) dinner=true;
       }
       const hc=hoursCheck(it, placeById.get(it.place_id)); if(hc && hc.warn) hoursIssues++;
+      const ec=eventCheck(it, placeById.get(it.place_id)); if(ec && ec.warn) eventIssues++;
+      if(isOutdoor(it, placeById.get(it.place_id))) outdoor++;
       if(it.booking_status==="needed") toBook++;
       const ic=itemCost(it);
       if(ic){ costN++; if(ic.pp==null) ppPartial=true; else pp+=ic.pp; if(ic.group==null) groupPartial=true; else group+=ic.group; }
     }
-    return { n:list.length, counts, lunch, dinner, hoursIssues, pp, ppPartial, group, groupPartial, costN, toBook };
+    return { n:list.length, counts, lunch, dinner, hoursIssues, eventIssues, outdoor, pp, ppPartial, group, groupPartial, costN, toBook };
   }
   function renderStrip(byDay, sums){
     const strip=el("nav","strip"); strip.setAttribute("aria-label","Trip days");
@@ -1356,13 +1372,17 @@ body.is-dragging, body.is-dragging *{cursor:grabbing !important;user-select:none
       const b=el("button","sday"+(sm.n>=5?" l3":sm.n>=3?" l2":sm.n>=1?" l1":"")+(HOLIDAYS[day]?" hol":"")); b.type="button";
       const dd=new Date(day+"T12:00:00Z");
       b.append(el("span","wd",dd.toLocaleDateString(undefined,{weekday:"short",timeZone:"UTC"})), el("span","dn",String(dd.getUTCDate())), el("span","bar"));
-      const issues = sm.n && (!sm.lunch || !sm.dinner || sm.hoursIssues || sm.toBook);
+      const wsd=wxFor(day);
+      if(wsd && wsd.kind==="forecast"){ const sw=el("span","sw",wsd.emoji); b.insertBefore(sw, b.lastChild); }
+      const issues = sm.n && (!sm.lunch || !sm.dinner || sm.hoursIssues || sm.toBook || sm.eventIssues);
       if(issues) b.append(el("span","dot"));
       const parts=[fmtDay(day)+(HOLIDAYS[day]?" ("+HOLIDAYS[day]+")":""), sm.n ? sm.n+(sm.n===1?" item":" items") : "nothing planned"];
       if(sm.n && !sm.dinner) parts.push("no dinner yet");
       if(sm.n && !sm.lunch) parts.push("no lunch yet");
       if(sm.hoursIssues) parts.push(sm.hoursIssues+" hours conflict"+(sm.hoursIssues>1?"s":""));
       if(sm.toBook) parts.push(sm.toBook+" still to book");
+      if(sm.eventIssues) parts.push(sm.eventIssues+" seasonal event not running that day");
+      if(wsd) parts.push(wxText(wsd));
       b.title=parts.join(" · "); b.setAttribute("aria-label",parts.join(", "));
       b.onclick=()=>{
         const sec=$("day-"+day); if(!sec) return;
@@ -1526,8 +1546,77 @@ body.is-dragging, body.is-dragging *{cursor:grabbing !important;user-select:none
     ]});
   });
 
-  T.onOnline(()=>load(true));   // catch up after being offline
-  load().then(()=>{ T.maybeAskName(); refreshHoursSoon(); });
+  // ---------- seasonal events ----------
+  let eventsById=new Map();
+  function shortD(d){ const [y,m,dd]=d.split("-").map(Number); return new Date(Date.UTC(y,m-1,dd)).toLocaleDateString(undefined,{month:"short",day:"numeric",timeZone:"UTC"}); }
+  function eventCheck(it, place){
+    const ev = place && place.event_id ? eventsById.get(place.event_id) : null;
+    if(!ev) return null;
+    const usual = ev.confirmed ? "" : " (usual dates)";
+    const range = ev.starts===ev.ends ? shortD(ev.starts)+" only" : shortD(ev.starts)+" – "+shortD(ev.ends);
+    if(it.day<ev.starts || it.day>ev.ends) return { warn: ev.name+" isn't running that day: "+range+usual };
+    if(ev.ends<TRIP_END && ev.starts!==ev.ends) return { info: "Seasonal: runs through "+shortD(ev.ends)+usual };
+    return { info: "Seasonal: "+(ev.starts===ev.ends ? range : "runs "+range)+usual };
+  }
+  const OUTDOOR_RX=/park|garden|plaza|market|zoo|beach|square|pier|bridge|rink|street|village|cemetery|promenade/i;
+  function isOutdoor(it, place){
+    if(!place) return false;
+    const ev = place.event_id ? eventsById.get(place.event_id) : null;
+    if(ev) return !!ev.outdoor;
+    return place.category==="location" || OUTDOOR_RX.test(place.type||"");
+  }
+
+  // ---------- weather (Open-Meteo, free; cached on the device) ----------
+  let wx={ forecast:{}, typical:{} };
+  try{ const c=JSON.parse(localStorage.getItem("trip-wx")||"null"); if(c && c.v===1) wx=c; }catch(e){}
+  function wxEmoji(code, snow){
+    if(snow>=0.4 || (code>=71 && code<=77) || code===85 || code===86) return "🌨";
+    if(code>=95) return "⛈"; if(code>=61 && code<=67 || code>=80 && code<=82) return "🌧"; if(code>=51 && code<=57) return "🌦";
+    if(code===45 || code===48) return "🌫"; if(code===3) return "☁️"; if(code===2) return "⛅"; if(code===1) return "🌤"; return "☀️";
+  }
+  async function loadWeather(){
+    const now=Date.now(); let changed=false;
+    const Q="latitude=40.758&longitude=-73.9855&temperature_unit=fahrenheit&precipitation_unit=inch&timezone=America%2FNew_York";
+    if(!wx.fAt || now-wx.fAt > 3*3600e3){
+      try{
+        const j=await (await fetch("https://api.open-meteo.com/v1/forecast?"+Q+"&forecast_days=16&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,snowfall_sum")).json();
+        const f={}; j.daily.time.forEach((d,i)=>{ f[d]={ code:j.daily.weather_code[i], hi:Math.round(j.daily.temperature_2m_max[i]), lo:Math.round(j.daily.temperature_2m_min[i]), pop:j.daily.precipitation_probability_max[i]||0, snow:j.daily.snowfall_sum[i]||0 }; });
+        wx.forecast=f; wx.fAt=now; changed=true;
+      }catch(e){}
+    }
+    if(!wx.tAt || now-wx.tAt > 20*86400e3){
+      try{
+        // "Typical" = the same dates over the last five winters.
+        const years=[2021,2022,2023,2024,2025];
+        const all=await Promise.all(years.map(y=>fetch("https://archive-api.open-meteo.com/v1/archive?"+Q+"&start_date="+y+"-12-18&end_date="+(y+1)+"-01-03&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,snowfall_sum").then(r=>r.json())));
+        const acc={};
+        for(const j of all){ if(!j.daily) continue; j.daily.time.forEach((d,i)=>{ const k=d.slice(5), a=acc[k]||(acc[k]={ hi:0, lo:0, n:0, wet:0, snow:0 });
+          a.hi+=j.daily.temperature_2m_max[i]; a.lo+=j.daily.temperature_2m_min[i]; a.n++;
+          if((j.daily.precipitation_sum[i]||0)>=0.04) a.wet++; if((j.daily.snowfall_sum[i]||0)>=0.4) a.snow++; }); }
+        const t={}; for(const k in acc){ const a=acc[k]; t[k]={ hi:Math.round(a.hi/a.n), lo:Math.round(a.lo/a.n), wet:a.wet, snow:a.snow, n:a.n }; }
+        if(Object.keys(t).length){ wx.typical=t; wx.tAt=now; changed=true; }
+      }catch(e){}
+    }
+    if(changed){ wx.v=1; try{ localStorage.setItem("trip-wx", JSON.stringify(wx)); }catch(e){} render(); }
+  }
+  function wxFor(day){
+    const f=wx.forecast && wx.forecast[day];
+    if(f) return { kind:"forecast", emoji:wxEmoji(f.code,f.snow), hi:f.hi, lo:f.lo, pop:f.pop, snow:f.snow, wet: f.pop>=60 || f.snow>=0.4 };
+    const t=wx.typical && wx.typical[day.slice(5)];
+    if(t) return { kind:"typical", hi:t.hi, lo:t.lo, wet:t.wet, snow:t.snow, n:t.n };
+    return null;
+  }
+  function wxText(w){
+    return w.kind==="forecast" ? w.emoji+" "+w.hi+"°/"+w.lo+"°"+(w.pop>=20 ? " · "+w.pop+"% "+(w.snow>=0.1?"snow":"rain") : "")
+                               : "Usually "+w.hi+"°/"+w.lo+"°";
+  }
+  function wxTitle(w){
+    return w.kind==="forecast" ? "Forecast for Midtown: high "+w.hi+"°F, low "+w.lo+"°F, "+w.pop+"% chance of precipitation"
+      : "Typical for this date (average of the last "+w.n+" winters): high "+w.hi+"°F, low "+w.lo+"°F. Rain or snow fell on "+w.wet+" of "+w.n+" of those days"+(w.snow?", snow on "+w.snow:"")+". The real forecast appears here about 16 days out.";
+  }
+
+  T.onOnline(()=>{ load(true); loadWeather(); });   // catch up after being offline
+  load().then(()=>{ T.maybeAskName(); refreshHoursSoon(); loadWeather(); });
 })();
 </script>
 </body>

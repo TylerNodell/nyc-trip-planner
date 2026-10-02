@@ -1,6 +1,6 @@
 /* Offline support. Online: always the network first, so updates show up right away.
    Offline: the last copy we saw — pages, your trip data, and map tiles you've already looked at. */
-const VERSION = "202610022117";
+const VERSION = "202610022128";
 const SHELL = "shell-" + VERSION, DATA = "data-v1", TILES = "tiles-v1";
 const SHELL_URLS = [
   "./", "./index.html", "./itinerary.html",
