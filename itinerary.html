@@ -12,14 +12,14 @@
 :root{
   --bg:#F2F3F4; --panel:#FFFFFF; --ink:#000000; --muted:#5B6166; --line:#D5D8DB;
   --sign:#000000; --sign-ink:#FFFFFF;
-  --attr:#0039A6; --food:#EE352E; --loc:#00933C; --other:#808183; --focus:#FCCC0A;
+  --attr:#0039A6; --food:#EE352E; --loc:#00933C; --shop:#FCCC0A; --other:#808183; --focus:#FCCC0A;
   box-sizing:border-box;
   padding-top:env(safe-area-inset-top,0px);
   padding-bottom:env(safe-area-inset-bottom,0px);
 }
 @media (prefers-color-scheme: dark){
   :root{ --bg:#121416; --panel:#1C1F22; --ink:#F2F3F4; --muted:#9BA2A8; --line:#30353A;
-    --attr:#3A6FD8; --food:#F0524C; --loc:#2DB45A; --other:#9A9B9D; color-scheme:dark; }
+    --attr:#3A6FD8; --food:#F0524C; --loc:#2DB45A; --shop:#FCCC0A; --other:#9A9B9D; color-scheme:dark; }
 }
 html{scroll-padding-top:env(safe-area-inset-top,0px)}
 *,*::before,*::after{box-sizing:inherit}
@@ -42,7 +42,7 @@ button,input,select{font:inherit;color:inherit}
 /* line-height matches the circle so the letter sits dead center (page line-height pushed it down) */
 .bullet{width:1.1em;height:1.1em;border-radius:50%;display:inline-block;text-align:center;line-height:1.1em;vertical-align:middle;
   color:#fff;font-weight:800;font-size:.55em;flex:none}
-.b-attr{background:var(--attr)} .b-food{background:var(--food)} .b-loc{background:var(--loc)} .b-other{background:var(--other)}
+.b-attr{background:var(--attr)} .b-food{background:var(--food)} .b-loc{background:var(--loc)} .b-shop{background:var(--shop);color:#000} .b-other{background:var(--other)}
 
 main{max-width:1100px;margin:0 auto;padding:20px;display:grid;grid-template-columns:minmax(0,1.7fr) minmax(0,1fr);gap:28px;align-items:start}
 @media (max-width:820px){ main{grid-template-columns:minmax(0,1fr)} }   /* minmax(0,…) so the day strip scrolls instead of widening the page */
@@ -201,7 +201,7 @@ body.is-dragging, body.is-dragging *{cursor:grabbing !important;user-select:none
 .foot{color:var(--muted);font-size:13px;margin-top:8px}
 </style>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
-<link rel="stylesheet" href="shared.css?v=202610022035">
+<link rel="stylesheet" href="shared.css?v=202610022041">
 </head>
 <body>
 <header class="sign">
@@ -242,20 +242,20 @@ body.is-dragging, body.is-dragging *{cursor:grabbing !important;user-select:none
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="shared.js?v=202610022035"></script>
-<script src="maps.js?v=202610022035"></script>
+<script src="shared.js?v=202610022041"></script>
+<script src="maps.js?v=202610022041"></script>
 <script>
 (function(){
   const SUPABASE_URL = "https://jkehxprjvrivlzkgkvgw.supabase.co";
   const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImprZWh4cHJqdnJpdmx6a2drdmd3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA5NTc4NjksImV4cCI6MjEwNjUzMzg2OX0.DfAHZ04gkjdrFKCMPyTrgIo7PYkHwFfYn0tmk8VNEhA";
 
-  const CATS = { attraction:{cls:"b-attr",letter:"A"}, restaurant:{cls:"b-food",letter:"R"}, location:{cls:"b-loc",letter:"L"}, other:{cls:"b-other",letter:"O"} };
-  const CAT_ORDER = { attraction:0, restaurant:1, location:2, other:3 };
+  const CATS = { attraction:{cls:"b-attr",letter:"A"}, restaurant:{cls:"b-food",letter:"R"}, location:{cls:"b-loc",letter:"L"}, shopping:{cls:"b-shop",letter:"S"}, other:{cls:"b-other",letter:"O"} };
+  const CAT_ORDER = { attraction:0, restaurant:1, location:2, shopping:3, other:4 };
   const BORO_ORDER = { Manhattan:0, Brooklyn:1, Queens:2, Bronx:3, "Staten Island":4 };
   let collapsed = new Set();
   let catSel = new Set();   // empty = all categories
   try{ catSel = new Set(JSON.parse(localStorage.getItem("itin-cat-filter")||"[]")); }catch(e){}
-  const CAT_LABEL = { attraction:"Attractions", restaurant:"Restaurants", location:"Locations", other:"Other" };
+  const CAT_LABEL = { attraction:"Attractions", restaurant:"Restaurants", location:"Locations", shopping:"Shopping", other:"Other" };
   function poolCat(p){ return CAT_LABEL[p.category] ? p.category : "other"; }
   try{ collapsed = new Set(JSON.parse(localStorage.getItem("itin-collapsed-areas")||"[]")); }catch(e){}
   const $ = id => document.getElementById(id);
@@ -455,7 +455,7 @@ body.is-dragging, body.is-dragging *{cursor:grabbing !important;user-select:none
     render();
   }
   function placeRec(p){
-    return { place_id:p.id, name:p.name, category:["attraction","restaurant","location"].includes(p.category)?p.category:"other",
+    return { place_id:p.id, name:p.name, category:["attraction","restaurant","location","shopping"].includes(p.category)?p.category:"other",
       neighborhood:p.neighborhood||"", address:p.address||"", maps_url:p.maps_url||null };
   }
 
@@ -492,7 +492,7 @@ body.is-dragging, body.is-dragging *{cursor:grabbing !important;user-select:none
       const dayAreas=[...new Set(list.map(i=>byId.get(i.place_id)&&byId.get(i.place_id).area).filter(Boolean))];
       if(dayAreas.length) sec.append(el("span","day-areas",(dayAreas.length===1?"Area: ":"Areas: ")+dayAreas.join(" → ")));
       const sm=sums.get(day), chips=el("div","day-chips");
-      for(const [c,lbl] of [["attraction","sight"],["restaurant","food stop"],["location","spot"],["other","other"]]){
+      for(const [c,lbl] of [["attraction","sight"],["restaurant","food stop"],["location","spot"],["shopping","shop"],["other","other"]]){
         const n=sm.counts[c]||0; if(n) chips.append(el("span","dchip",n+" "+lbl+(n>1&&c!=="other"?"s":"")));
       }
       if(!sm.lunch) chips.append(el("span","dchip warn","No lunch yet"));
@@ -726,7 +726,7 @@ body.is-dragging, body.is-dragging *{cursor:grabbing !important;user-select:none
     all.setAttribute("aria-pressed", catSel.size?"false":"true");
     all.onclick=()=>{ catSel.clear(); save(); };
     box.append(all);
-    for(const c of ["attraction","restaurant","location","other"]){
+    for(const c of ["attraction","restaurant","location","shopping","other"]){
       if(!n[c]) continue;
       const b=el("button","chip"); b.type="button"; b.dataset.cat=c;
       b.append(bullet(c), el("span","",CAT_LABEL[c]), el("span","n",String(n[c])));
@@ -1113,7 +1113,7 @@ body.is-dragging, body.is-dragging *{cursor:grabbing !important;user-select:none
   function daySummary(list, placeById){
     const counts={}; let lunch=false, dinner=false, hoursIssues=0;
     for(const it of list){
-      const c=["attraction","restaurant","location"].includes(it.category)?it.category:"other";
+      const c=["attraction","restaurant","location","shopping"].includes(it.category)?it.category:"other";
       counts[c]=(counts[c]||0)+1;
       if(it.category==="restaurant"){
         const t=it.start_time?toMin(it.start_time):null;

@@ -1,7 +1,7 @@
 /* Map helpers shared by both pages (Leaflet + free OpenStreetMap tiles). */
 (function(){
-  const COLORS = { attraction:"#0039A6", restaurant:"#EE352E", location:"#00933C", other:"#808183" };
-  const LETTER = { attraction:"A", restaurant:"R", location:"L", other:"O" };
+  const COLORS = { attraction:"#0039A6", restaurant:"#EE352E", location:"#00933C", shopping:"#FCCC0A", other:"#808183" };
+  const LETTER = { attraction:"A", restaurant:"R", location:"L", shopping:"S", other:"O" };
 
   function tiles(map){
     // Standard OpenStreetMap tiles (free with attribution). Dark mode dims them with a CSS filter.

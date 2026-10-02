@@ -12,14 +12,14 @@
 :root{
   --bg:#F2F3F4; --panel:#FFFFFF; --ink:#000000; --muted:#5B6166; --line:#D5D8DB;
   --sign:#000000; --sign-ink:#FFFFFF;
-  --attr:#0039A6; --food:#EE352E; --loc:#00933C; --other:#808183; --focus:#FCCC0A;
+  --attr:#0039A6; --food:#EE352E; --loc:#00933C; --shop:#FCCC0A; --other:#808183; --focus:#FCCC0A;
   box-sizing:border-box;
   padding-top:env(safe-area-inset-top,0px);
   padding-bottom:env(safe-area-inset-bottom,0px);
 }
 @media (prefers-color-scheme: dark){
   :root{ --bg:#121416; --panel:#1C1F22; --ink:#F2F3F4; --muted:#9BA2A8; --line:#30353A;
-    --attr:#3A6FD8; --food:#F0524C; --loc:#2DB45A; --other:#9A9B9D; }
+    --attr:#3A6FD8; --food:#F0524C; --loc:#2DB45A; --shop:#FCCC0A; --other:#9A9B9D; }
 }
 html{scroll-padding-top:env(safe-area-inset-top,0px)}
 *,*::before,*::after{box-sizing:inherit}
@@ -42,7 +42,7 @@ button,input{font:inherit;color:inherit}
 /* line-height matches the circle so the letter sits dead center (page line-height pushed it down) */
 .bullet{width:1.1em;height:1.1em;border-radius:50%;display:inline-block;text-align:center;line-height:1.1em;vertical-align:middle;
   color:#fff;font-weight:800;font-size:.55em;flex:none}
-.b-attr{background:var(--attr)} .b-food{background:var(--food)} .b-loc{background:var(--loc)} .b-other{background:var(--other)}
+.b-attr{background:var(--attr)} .b-food{background:var(--food)} .b-loc{background:var(--loc)} .b-shop{background:var(--shop);color:#000} .b-other{background:var(--other)}
 
 .search{display:flex;gap:8px}
 .search input{flex:1;min-width:0;padding:13px 14px;border:2px solid #fff;border-radius:6px;background:#fff;color:#000;font-size:17px}
@@ -80,10 +80,10 @@ main{max-width:980px;margin:0 auto;padding:20px}
 .warn{color:var(--food);font-size:14px;font-weight:600}
 .cand .btn{align-self:center}
 
-.lists{display:grid;grid-template-columns:1fr 1fr;grid-template-rows:auto 1fr;grid-template-areas:"attr food" "loc food";gap:28px 24px}
+.lists{display:grid;grid-template-columns:1fr 1fr;grid-template-rows:auto auto 1fr;grid-template-areas:"attr food" "loc food" "shop food";gap:28px 24px}
 .lists > section{align-self:start;min-width:0}
-.sec-attr{grid-area:attr} .sec-food{grid-area:food} .sec-loc{grid-area:loc}
-@media (max-width:720px){.lists{grid-template-columns:1fr;grid-template-rows:none;grid-template-areas:"attr" "food" "loc"}}
+.sec-attr{grid-area:attr} .sec-food{grid-area:food} .sec-loc{grid-area:loc} .sec-shop{grid-area:shop}
+@media (max-width:720px){.lists{grid-template-columns:1fr;grid-template-rows:none;grid-template-areas:"attr" "food" "loc" "shop"}}
 .list-head{display:flex;align-items:center;gap:10px;border-bottom:3px solid var(--ink);padding-bottom:8px;margin-bottom:4px}
 .list-head .bullet{font-size:34px}
 .list-head h2{margin:0;font-size:22px;font-weight:800;letter-spacing:-.01em}
@@ -111,13 +111,13 @@ main{max-width:980px;margin:0 auto;padding:20px}
 .foot{margin-top:32px;color:var(--muted);font-size:13px;max-width:70ch}
 </style>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
-<link rel="stylesheet" href="shared.css?v=202610022035">
+<link rel="stylesheet" href="shared.css?v=202610022041">
 </head>
 <body>
 <header class="sign">
   <div class="sign-inner">
     <nav class="nav" aria-label="Pages"><a href="./" aria-current="page">Places</a><a href="./itinerary.html">Itinerary</a><span class="nav-right"><button id="activityBtn" class="nav-btn" type="button">Activity</button><button id="whoBtn" class="nav-btn" type="button">👤</button></span></nav>
-    <h1>NYC trip list <span class="bullets" aria-hidden="true"><span class="bullet b-attr">A</span><span class="bullet b-food">R</span><span class="bullet b-loc">L</span></span></h1>
+    <h1>NYC trip list <span class="bullets" aria-hidden="true"><span class="bullet b-attr">A</span><span class="bullet b-food">R</span><span class="bullet b-loc">L</span><span class="bullet b-shop">S</span></span></h1>
     <p>Type a place or paste a Google Maps link, pick the right match, and it lands in the right list.</p>
     <form class="search" id="searchForm" autocomplete="off">
       <label for="q" class="sr">Place name</label>
@@ -139,7 +139,7 @@ main{max-width:980px;margin:0 auto;padding:20px}
   </div>
   <div id="mapWrap" hidden>
     <div id="placesMap" class="places-map" role="region" aria-label="Map of all places"></div>
-    <div class="map-legend" aria-hidden="true"><span><i style="background:#0039A6"></i>Attractions</span><span><i style="background:#EE352E"></i>Restaurants</span><span><i style="background:#00933C"></i>Locations</span><span><i style="background:#808183"></i>Other</span><span>🏠 Home</span></div>
+    <div class="map-legend" aria-hidden="true"><span><i style="background:#0039A6"></i>Attractions</span><span><i style="background:#EE352E"></i>Restaurants</span><span><i style="background:#00933C"></i>Locations</span><span><i style="background:#FCCC0A"></i>Shopping</span><span><i style="background:#808183"></i>Other</span><span>🏠 Home</span></div>
   </div>
   <div class="lists">
     <section class="sec-attr">
@@ -154,6 +154,10 @@ main{max-width:980px;margin:0 auto;padding:20px}
       <div class="list-head"><span class="bullet b-loc" aria-hidden="true">L</span><h2>Locations</h2><span class="count" id="countLoc">0</span></div>
       <div id="listLoc"><div class="empty">Loading…</div></div>
     </section>
+    <section class="sec-shop">
+      <div class="list-head"><span class="bullet b-shop" aria-hidden="true">S</span><h2>Shopping</h2><span class="count" id="countShop">0</span></div>
+      <div id="listShop"><div class="empty">Loading…</div></div>
+    </section>
   </div>
   <section class="other-wrap" id="otherWrap" hidden>
     <div class="list-head"><span class="bullet b-other" aria-hidden="true">O</span><h2>Other</h2><span class="count" id="countOther">0</span></div>
@@ -166,8 +170,8 @@ main{max-width:980px;margin:0 auto;padding:20px}
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="shared.js?v=202610022035"></script>
-<script src="maps.js?v=202610022035"></script>
+<script src="shared.js?v=202610022041"></script>
+<script src="maps.js?v=202610022041"></script>
 <script>
 (function(){
   // Public client config. The anon key is meant to be public; access is controlled by row-level security.
@@ -178,6 +182,7 @@ main{max-width:980px;margin:0 auto;padding:20px}
     attraction:{label:"Attractions", cls:"b-attr", letter:"A"},
     restaurant:{label:"Restaurants", cls:"b-food", letter:"R"},
     location:{label:"Locations", cls:"b-loc", letter:"L"},
+    shopping:{label:"Shopping", cls:"b-shop", letter:"S"},
     other:{label:"Other", cls:"b-other", letter:"O"}
   };
   const $ = id => document.getElementById(id);
@@ -194,7 +199,7 @@ main{max-width:980px;margin:0 auto;padding:20px}
 
   function el(tag, cls, text){ const e=document.createElement(tag); if(cls) e.className=cls; if(text!=null) e.textContent=text; return e; }
   function bullet(cat){ const c=CATS[cat]||CATS.other; const b=el("span","bullet "+c.cls,c.letter); b.setAttribute("aria-hidden","true"); return b; }
-  function normCat(c){ return c==="restaurant"||c==="attraction"||c==="location" ? c : "other"; }
+  function normCat(c){ return c==="restaurant"||c==="attraction"||c==="location"||c==="shopping" ? c : "other"; }
   function score(p){ const t=tally(p.id); return t.up-t.down; }
   function setStatus(t){ statusEl.textContent=t||""; }
   function mapsUrl(p){
@@ -355,7 +360,7 @@ main{max-width:980px;margin:0 auto;padding:20px}
     menu.setAttribute("aria-label","Options for "+p.name);
     menu.append(el("div","menu-title",p.name));
     const cur=normCat(p.category);
-    for(const c of ["attraction","restaurant","location","other"]) if(c!==cur) menuItem("Move to "+CATS[c].label, ()=>movePlace(p,c));
+    for(const c of ["attraction","restaurant","location","shopping","other"]) if(c!==cur) menuItem("Move to "+CATS[c].label, ()=>movePlace(p,c));
     menu.append(el("hr"));
     menuItem(p.description ? "Edit description…" : "Write a description…", ()=>{
       editing={ id:p.id, draft:p.description||p.summary||"", fresh:true }; render();
@@ -483,6 +488,7 @@ main{max-width:980px;margin:0 auto;padding:20px}
     renderList("attraction",$("listAttr"),$("countAttr"));
     renderList("restaurant",$("listFood"),$("countFood"));
     renderList("location",$("listLoc"),$("countLoc"));
+    renderList("shopping",$("listShop"),$("countShop"));
     $("otherWrap").hidden = renderList("other",$("listOther"),$("countOther"))===0;
   }
 
@@ -516,7 +522,7 @@ main{max-width:980px;margin:0 auto;padding:20px}
       mb.append(el("div","meta","Couldn't read that link. In Google Maps, open the place and use Share → Copy link, or type the name instead."));
     }else{
       mb.append(el("div","meta",'Not it? Add "'+manualName+'" yourself:'));
-      for(const c of ["attraction","restaurant","location"]){
+      for(const c of ["attraction","restaurant","location","shopping"]){
         const b=el("button","btn btn-ghost","As "+c); b.type="button";
         b.onclick=async()=>{ if(await addPlace({name:manualName,category:c})){ $("results").hidden=true; $("q").value=""; } };
         manual.append(b);

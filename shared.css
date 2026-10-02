@@ -94,7 +94,7 @@
 .pin-wrap{background:none;border:0}
 .pin{display:block;width:28px;height:28px;border-radius:50%;color:#fff;font-weight:800;font-size:14px;line-height:28px;text-align:center;
      border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.35);font-family:"Schibsted Grotesk",-apple-system,Helvetica,Arial,sans-serif}
-.pin.c-attraction{background:#0039A6} .pin.c-restaurant{background:#EE352E} .pin.c-location{background:#00933C} .pin.c-other{background:#808183}
+.pin.c-attraction{background:#0039A6} .pin.c-restaurant{background:#EE352E} .pin.c-location{background:#00933C} .pin.c-shopping{background:#FCCC0A;color:#000} .pin.c-other{background:#808183}
 .pin.home{background:#000;font-size:15px}
 .leaflet-container{font:inherit;background:var(--bg)}
 .leaflet-popup-content{font-size:14px;line-height:1.4}

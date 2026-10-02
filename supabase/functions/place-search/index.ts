@@ -48,6 +48,15 @@ const ATTRACTION = new Set([
   "tour_agency", "planetarium", "library", "market",
 ]);
 
+// Stores and shopping (food shops stay restaurants because FOOD is checked first).
+const SHOP = new Set([
+  "store", "shopping_mall", "clothing_store", "department_store", "book_store", "gift_shop", "jewelry_store",
+  "shoe_store", "electronics_store", "discount_store", "furniture_store", "home_goods_store", "hardware_store",
+  "sporting_goods_store", "toy_store", "grocery_store", "supermarket", "convenience_store", "liquor_store",
+  "florist", "pet_store", "cell_phone_store", "asian_grocery_store", "butcher_shop", "food_store",
+  "bicycle_store", "warehouse_store", "wholesaler", "outlet_mall", "thrift_store", "beauty_salon_supply",
+]);
+
 // Streets, neighborhoods, and other areas rather than businesses or sights.
 const LOCATION = new Set([
   "route", "street_address", "intersection", "neighborhood", "sublocality", "sublocality_level_1",
@@ -55,11 +64,12 @@ const LOCATION = new Set([
   "administrative_area_level_3", "island", "natural_feature",
 ]);
 
-type Category = "restaurant" | "attraction" | "location";
+type Category = "restaurant" | "attraction" | "shopping" | "location";
 function classify(t: string | undefined): Category | null {
   if (!t) return null;
   if (FOOD.has(t) || t.endsWith("_restaurant")) return "restaurant";
   if (ATTRACTION.has(t)) return "attraction";
+  if (SHOP.has(t) || t.endsWith("_store")) return "shopping";
   if (LOCATION.has(t)) return "location";
   return null;
 }
