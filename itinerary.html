@@ -45,7 +45,7 @@ button,input,select{font:inherit;color:inherit}
 .b-attr{background:var(--attr)} .b-food{background:var(--food)} .b-loc{background:var(--loc)} .b-other{background:var(--other)}
 
 main{max-width:1100px;margin:0 auto;padding:20px;display:grid;grid-template-columns:minmax(0,1.7fr) minmax(0,1fr);gap:28px;align-items:start}
-@media (max-width:820px){ main{grid-template-columns:1fr} .pool{order:-1} }
+@media (max-width:820px){ main{grid-template-columns:minmax(0,1fr)} }   /* minmax(0,…) so the day strip scrolls instead of widening the page */
 
 .section-head{display:flex;align-items:center;gap:10px;border-bottom:3px solid var(--ink);padding-bottom:8px;margin-bottom:6px}
 .section-head h2{margin:0;font-size:22px;font-weight:800;letter-spacing:-.01em}
@@ -89,7 +89,35 @@ body.is-dragging, body.is-dragging *{cursor:grabbing !important;user-select:none
 .empty{color:var(--muted);font-size:15px;padding:14px 0}
 
 .pool{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px;position:sticky;top:calc(env(safe-area-inset-top,0px) + 12px);max-height:calc(100vh - 24px);overflow:auto}
-@media (max-width:820px){ .pool{position:static;max-height:none} }
+/* Phones: the list becomes a bottom sheet over the schedule */
+.pool-fab,.sheet-close,.sheet-grip,.sheet-backdrop{display:none}
+@media (max-width:820px){
+  .sign{padding-bottom:14px}
+  .sign h1{font-size:28px}
+  .sign p{display:none}
+  main{padding:12px 14px 96px}
+  .pool{position:fixed;left:0;right:0;bottom:0;top:auto;z-index:60;margin:0;border-radius:16px 16px 0 0;border:0;
+        height:min(88vh,calc(100dvh - 24px));max-height:none;overflow:auto;overscroll-behavior:contain;
+        padding:6px 14px calc(14px + env(safe-area-inset-bottom,0px));
+        box-shadow:0 -10px 30px rgba(0,0,0,.25);transform:translateY(105%);visibility:hidden;
+        transition:transform .26s ease, visibility 0s linear .26s}
+  .pool.open{transform:none;visibility:visible;transition:transform .26s ease}
+  .pool .section-head{position:sticky;top:-6px;z-index:2;background:var(--panel);padding-top:6px}
+  .sheet-grip{display:block;width:40px;height:5px;border-radius:3px;background:var(--line);margin:4px auto 6px}
+  .sheet-close{all:unset;box-sizing:border-box;display:block;cursor:pointer;width:32px;height:32px;margin-left:6px;border-radius:6px;font-size:18px;color:var(--muted);text-align:center;line-height:32px}
+  .sheet-close:focus-visible{outline:3px solid var(--focus)}
+  .sheet-backdrop{display:block;position:fixed;inset:0;z-index:59;background:rgba(0,0,0,.4);opacity:0;pointer-events:none;transition:opacity .2s}
+  .sheet-backdrop.show{opacity:1;pointer-events:auto}
+  .pool-fab{display:flex;position:fixed;z-index:55;left:50%;transform:translateX(-50%);bottom:calc(16px + env(safe-area-inset-bottom,0px));
+            align-items:center;gap:8px;padding:12px 18px;border:0;border-radius:999px;background:var(--focus);color:#000;
+            font-weight:800;font-size:15px;box-shadow:0 8px 24px rgba(0,0,0,.3);cursor:pointer;white-space:nowrap}
+  .pool-fab .n{font-weight:600;opacity:.75}
+  .pool-fab:focus-visible{outline:3px solid var(--ink);outline-offset:2px}
+  body.sheet-open{overflow:hidden}
+  body.sheet-open .pool-fab{display:none}
+  .toast{bottom:calc(80px + env(safe-area-inset-bottom,0px))}
+  body.sheet-open .toast{bottom:calc(18px + env(safe-area-inset-bottom,0px))}
+}
 .pool .section-head{border-bottom-width:2px}
 .pool .section-head h2{font-size:18px}
 .pool-tools{display:flex;justify-content:space-between;align-items:center;gap:10px;margin:8px 0 4px;font-size:14px;flex-wrap:wrap}
@@ -184,8 +212,9 @@ body.is-dragging, body.is-dragging *{cursor:grabbing !important;user-select:none
     <div class="foot-links"><button class="link" type="button" id="trashBtn">Trash</button></div>
   </section>
 
-  <aside class="pool" aria-labelledby="poolHead">
-    <div class="section-head"><h2 id="poolHead">From your list</h2><span class="count" id="poolCount">0</span></div>
+  <aside class="pool" id="pool-panel" aria-labelledby="poolHead">
+    <div class="sheet-grip" aria-hidden="true"></div>
+    <div class="section-head"><h2 id="poolHead">From your list</h2><span class="count" id="poolCount">0</span><button class="sheet-close" type="button" id="sheetClose" aria-label="Close list">✕</button></div>
     <div class="pool-tools">
       <label><input type="checkbox" id="hideScheduled"> Hide scheduled</label>
       <button class="link" type="button" id="customBtn">+ Custom item</button>
@@ -200,6 +229,8 @@ body.is-dragging, body.is-dragging *{cursor:grabbing !important;user-select:none
     <p class="foot">Grouped by area, south to north, so nearby spots sit together. Places voted down are left out. Add more places on the <a class="link" href="./">Places</a> page.</p>
   </aside>
 </main>
+<div class="sheet-backdrop" id="sheetBackdrop"></div>
+<button class="pool-fab" type="button" id="poolFab" aria-controls="pool-panel" aria-expanded="false">＋ Add from your list <span class="n" id="fabCount"></span></button>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script src="shared.js"></script>
@@ -699,6 +730,7 @@ body.is-dragging, body.is-dragging *{cursor:grabbing !important;user-select:none
     });
   }
   async function jumpToScheduled(p, fromKeyboard){
+    if(sheetIsOpen()) closeSheet(false);
     const occ=items.filter(i=>i.place_id===p.id).sort((a,b)=>a.day<b.day?-1:a.day>b.day?1:(a.position-b.position));
     if(!occ.length) return;
     const k=(jumpNext.get(p.id)||0)%occ.length; jumpNext.set(p.id,k+1);
@@ -726,6 +758,7 @@ body.is-dragging, body.is-dragging *{cursor:grabbing !important;user-select:none
   function startDrag(e, info){
     if(drag || (e.pointerType==="mouse" && e.button!==0)) return;
     e.preventDefault();
+    if(info.kind==="place" && sheetIsOpen()) closeSheet(false);
     const r=info.src.getBoundingClientRect();
     const ghost=el("div","drag-ghost"); ghost.append(bullet(info.cat), el("span","",info.label));
     document.body.append(ghost);
@@ -865,7 +898,7 @@ body.is-dragging, body.is-dragging *{cursor:grabbing !important;user-select:none
     if(openThreads.has(id)){ const t=document.querySelector('[data-focus-key="thread:s:'+id+'"]'); if(t) t.focus(); }
   }
   // Redraw everything, keeping keyboard focus on the same control (handles, comment boxes, buttons).
-  function render(){ T.preserveFocus(()=>{ renderSchedule(); renderPool(); renderCustom(); }); }
+  function render(){ T.preserveFocus(()=>{ renderSchedule(); renderPool(); renderCustom(); }); paintFab(); }
 
   $("trashBtn").addEventListener("click",()=>T.openTrash({
     load: async()=>{
@@ -876,6 +909,30 @@ body.is-dragging, body.is-dragging *{cursor:grabbing !important;user-select:none
     restore: async(r)=>{ T.ok(await sb.from("schedule_items").update({ deleted_at:null, ...T.by() }).eq("id",r.id)); await load(true); },
     purge: async(r)=>{ T.ok(await sb.from("schedule_items").delete().eq("id",r.id)); }
   }));
+
+  // ---------- phones: list as a bottom sheet ----------
+  const mobileMQ=window.matchMedia("(max-width:820px)");
+  const pool=document.getElementById("pool-panel"), fab=$("poolFab"), backdrop=$("sheetBackdrop");
+  function sheetIsOpen(){ return mobileMQ.matches && pool.classList.contains("open"); }
+  function openSheet(){
+    pool.classList.add("open"); backdrop.classList.add("show"); document.body.classList.add("sheet-open");
+    pool.setAttribute("role","dialog"); pool.setAttribute("aria-modal","true");
+    fab.setAttribute("aria-expanded","true");
+    setTimeout(()=>$("sheetClose").focus({preventScroll:true}),30);
+  }
+  function closeSheet(returnFocus=true){
+    pool.classList.remove("open"); backdrop.classList.remove("show"); document.body.classList.remove("sheet-open");
+    pool.removeAttribute("role"); pool.removeAttribute("aria-modal");
+    fab.setAttribute("aria-expanded","false");
+    if(returnFocus) fab.focus({preventScroll:true});
+  }
+  fab.addEventListener("click",openSheet);
+  $("sheetClose").addEventListener("click",()=>closeSheet());
+  backdrop.addEventListener("click",()=>closeSheet());
+  document.addEventListener("keydown",e=>{ if(e.key==="Escape" && sheetIsOpen() && !drag && !document.querySelector("dialog[open]") && T.closeMenu){ if(!e.defaultPrevented) closeSheet(); } });
+  mobileMQ.addEventListener("change",()=>{ if(!mobileMQ.matches) closeSheet(false); });
+  function paintFab(){ const n=$("poolCount").textContent; $("fabCount").textContent = n && n!=="0" ? "· "+n : ""; }
+  new MutationObserver(paintFab).observe($("poolCount"),{ childList:true, characterData:true, subtree:true });
 
   // ---------- opening hours ----------
   const HOLIDAYS={ "2026-12-24":"Christmas Eve", "2026-12-25":"Christmas Day", "2026-12-31":"New Year's Eve", "2027-01-01":"New Year's Day" };

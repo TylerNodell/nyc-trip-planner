@@ -35,7 +35,7 @@
     const whoBtn = document.getElementById("whoBtn");
     function paintWho(){
       if(!whoBtn) return;
-      whoBtn.textContent = name ? "👤 "+name : "👤 Set your name";
+      whoBtn.textContent = name ? "👤 "+name : "👤 Set name";
       whoBtn.setAttribute("aria-label", name ? "You are "+name+". Change your name" : "Set your name");
     }
     paintWho();
