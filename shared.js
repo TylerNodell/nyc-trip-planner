@@ -111,6 +111,8 @@
       return { d, list };
     }
 
+    api.makeDrawer = drawer;
+
     // Activity feed
     const act = drawer("Activity");
     let actRows = [];

@@ -140,6 +140,24 @@ body.is-dragging, body.is-dragging *{cursor:grabbing !important;user-select:none
 .area-name{font-weight:800;font-size:15px}
 .area-meta{margin-left:auto;color:var(--muted);font-size:13px;white-space:nowrap}
 .day-areas{display:block;color:var(--muted);font-size:13px;margin:-2px 0 4px}
+.book{font-size:13px;font-weight:700;margin-top:3px}
+.book.need{color:var(--food)}
+.book.ok{color:var(--loc)}
+.book a{font-weight:600;margin-left:6px}
+.cost{font-size:13px;margin-top:2px}
+.booking-editor .row.two{grid-template-columns:1fr 1fr}
+.budget-btn{font-size:14px;margin-left:auto;margin-right:10px}
+.bud{padding:14px 0;border-bottom:1px solid var(--line)}
+.bud h3{margin:0 0 8px;font-size:15px;font-weight:800}
+.bud-big{display:flex;gap:18px;flex-wrap:wrap}
+.bud-big div{display:grid}
+.bud-big b{font-size:24px;font-weight:800}
+.bud-big span{font-size:12px;color:var(--muted)}
+.bud-row{display:flex;justify-content:space-between;gap:10px;padding:5px 0;font-size:14px}
+.bud-row .sub{color:var(--muted);font-size:12px}
+.bud-note{font-size:12px;color:var(--muted);margin-top:6px}
+.party{display:flex;align-items:center;gap:8px;font-size:14px}
+.party input{width:64px;padding:6px 8px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink);font:inherit}
 .leg{margin:0 0 0 34px;padding:4px 0 4px 12px;border-left:2px dashed var(--line);font-size:13px;color:var(--muted)}
 .leg.exact{border-left-style:solid;border-left-color:var(--attr);color:var(--ink)}
 @media (max-width:480px){ .leg{margin-left:20px} }
@@ -201,7 +219,7 @@ body.is-dragging, body.is-dragging *{cursor:grabbing !important;user-select:none
 .foot{color:var(--muted);font-size:13px;margin-top:8px}
 </style>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
-<link rel="stylesheet" href="shared.css?v=202610022041">
+<link rel="stylesheet" href="shared.css?v=202610022047">
 </head>
 <body>
 <header class="sign">
@@ -215,7 +233,7 @@ body.is-dragging, body.is-dragging *{cursor:grabbing !important;user-select:none
 
 <main>
   <section aria-labelledby="schedHead">
-    <div class="section-head"><h2 id="schedHead">Schedule</h2><span class="count" id="schedCount">0</span></div>
+    <div class="section-head"><h2 id="schedHead">Schedule</h2><button class="link budget-btn" type="button" id="budgetBtn">💵 Budget &amp; bookings</button><span class="count" id="schedCount">0</span></div>
     <div id="schedule"><div class="empty">Loading…</div></div>
     <div class="foot-links"><button class="link" type="button" id="trashBtn">Trash</button></div>
   </section>
@@ -242,8 +260,8 @@ body.is-dragging, body.is-dragging *{cursor:grabbing !important;user-select:none
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="shared.js?v=202610022041"></script>
-<script src="maps.js?v=202610022041"></script>
+<script src="shared.js?v=202610022047"></script>
+<script src="maps.js?v=202610022047"></script>
 <script>
 (function(){
   const SUPABASE_URL = "https://jkehxprjvrivlzkgkvgw.supabase.co";
@@ -324,16 +342,18 @@ body.is-dragging, body.is-dragging *{cursor:grabbing !important;user-select:none
   // ---------- data ----------
   async function load(force){
     const [pr, sr, vr, cr, hr, rr] = await Promise.all([
-      sb.from("places").select("id,name,category,type,neighborhood,area,borough,lat,lng,address,maps_url,google_place_id,hours,hours_text,hours_current,hours_checked_at").is("deleted_at",null).order("created_at"),
+      sb.from("places").select("id,name,category,type,neighborhood,area,borough,lat,lng,address,maps_url,google_place_id,hours,hours_text,hours_current,hours_checked_at,needs_booking").is("deleted_at",null).order("created_at"),
       sb.from("schedule_items").select("*").is("deleted_at",null).order("day").order("position").order("start_time",{nullsFirst:true}).order("created_at"),
       sb.from("votes").select("place_id,voter_id,voter_name,value"),
       sb.from("comments").select("*").not("schedule_item_id","is",null),
-      sb.from("trip_settings").select("value").eq("key","home").maybeSingle(),
+      sb.from("trip_settings").select("key,value").in("key",["home","party"]),
       sb.from("day_routes").select("*")
     ]);
     if(pr.error || sr.error){ setStatus("Couldn't load everything. Refresh to try again."); return; }
     places = pr.data; items = sr.data; votes = vr.data||[]; comments = cr.data||[];
-    home = hr && hr.data ? hr.data.value : null;
+    const settings=new Map((hr && hr.data || []).map(r=>[r.key, r.value]));
+    home = settings.get("home") || null;
+    party = settings.get("party") && Number.isInteger(settings.get("party").size) ? settings.get("party").size : null;
     dayRoutes = new Map((rr && rr.data || []).map(r=>[r.day, r]));
     tally = T.tally(votes);
     // Don't yank an editor or comment box out from under someone mid-typing; redraw when they're done.
@@ -351,6 +371,7 @@ body.is-dragging, body.is-dragging *{cursor:grabbing !important;user-select:none
     .on("postgres_changes",{event:"*",schema:"public",table:"votes"},reload)
     .on("postgres_changes",{event:"*",schema:"public",table:"comments"},reload)
     .on("postgres_changes",{event:"*",schema:"public",table:"day_routes"},reload)
+    .on("postgres_changes",{event:"*",schema:"public",table:"trip_settings"},reload)
     .subscribe();
 
   // ---------- editor ----------
@@ -456,7 +477,8 @@ body.is-dragging, body.is-dragging *{cursor:grabbing !important;user-select:none
   }
   function placeRec(p){
     return { place_id:p.id, name:p.name, category:["attraction","restaurant","location","shopping"].includes(p.category)?p.category:"other",
-      neighborhood:p.neighborhood||"", address:p.address||"", maps_url:p.maps_url||null };
+      neighborhood:p.neighborhood||"", address:p.address||"", maps_url:p.maps_url||null,
+      booking_status: p.needs_booking ? "needed" : "" };
   }
 
   async function insertItem(rec){
@@ -500,6 +522,8 @@ body.is-dragging, body.is-dragging *{cursor:grabbing !important;user-select:none
       if(sm.hoursIssues) chips.append(el("span","dchip warn",sm.hoursIssues+" hours "+(sm.hoursIssues===1?"conflict":"conflicts")));
       const trip=dayTravel(day, list, placeById);
       if(trip.legs.length) chips.append(el("span","dchip","🚇 "+(trip.exact?"":"~")+fmtDur(trip.total)+" getting around"));
+      if(sm.costN) chips.append(el("span","dchip","💵 "+fmtUSD(sm.pp)+(sm.ppPartial?"+":"")+" per person"));
+      if(sm.toBook) chips.append(el("span","dchip warn","🎟 "+sm.toBook+" to book"));
       sec.append(chips);
       if(trip.legs.length) sec.append(dayTools(day, trip));
       if(trip.legs.length && openMaps.has(day)){ const mc=el("div","day-map"); mc.id="map-"+day; sec.append(mc); pendingMaps.push([day, mc, trip]); }
@@ -545,6 +569,13 @@ body.is-dragging, body.is-dragging *{cursor:grabbing !important;user-select:none
           else if(hc.label) body.append(el("div","hours","🕒 "+hc.label));
           if(hc.soft) body.append(el("div","soft",hc.soft));
         }
+        if(it.booking_status==="needed") body.append(el("div","book need","🎟 Needs booking"));
+        else if(it.booking_status==="booked"){
+          const b=el("div","book ok","✓ Booked"+(it.confirmation?" · #"+it.confirmation:""));
+          if(it.booking_url){ const a=el("a","link","Reservation"); a.href=it.booking_url; a.target="_blank"; a.rel="noopener"; b.append(a); }
+          body.append(b);
+        }
+        if(it.cost!=null) body.append(el("div","cost","💵 "+costText(it)));
         const key="edit:"+it.id;
         if(open && open.key===key){
           body.append(editor({ key, title:"Edit "+it.name, withName:false, saveLabel:"Save",
@@ -561,6 +592,8 @@ body.is-dragging, body.is-dragging *{cursor:grabbing !important;user-select:none
               T.toast("Updated "+it.name+".", async()=>{ T.ok(await sb.from("schedule_items").update({ ...prevVals, ...T.by() }).eq("id",it.id)); await load(true); });
               return true;
             }}));
+        }else if(open && open.key==="book:"+it.id){
+          body.append(bookingEditor(it));
         }else{
           const removeItem=async()=>{
             const { error } = await sb.from("schedule_items").update({ deleted_at:new Date().toISOString(), ...T.by() }).eq("id",it.id);
@@ -573,6 +606,8 @@ body.is-dragging, body.is-dragging *{cursor:grabbing !important;user-select:none
           const ic=comments.filter(c=>c.schedule_item_id===it.id);
           const menuFor=()=>({ title:it.name, items:[
             { label:"Change time…", fn:()=>openEditor(key) },
+            { label: it.booking_status||it.cost!=null ? "Booking & cost…" : "Add booking or cost…", fn:()=>openEditor("book:"+it.id) },
+            ...(it.booking_status==="needed" ? [{ label:"Mark as booked", fn:()=>quickBooked(it) }] : []),
             { label: openThreads.has(it.id) ? "Hide comments" : ic.length ? "Comments ("+ic.length+")" : "Add a comment", fn:()=>toggleThread(it.id) },
             { label:"Open in Google Maps", fn:()=>window.open(mapsUrl(it),"_blank","noopener") },
             "-",
@@ -924,7 +959,7 @@ body.is-dragging, body.is-dragging *{cursor:grabbing !important;user-select:none
     if(openThreads.has(id)){ const t=document.querySelector('[data-focus-key="thread:s:'+id+'"]'); if(t) t.focus(); }
   }
   // Redraw everything, keeping keyboard focus on the same control (handles, comment boxes, buttons).
-  function render(){ T.preserveFocus(()=>{ renderSchedule(); renderPool(); renderCustom(); }); paintFab(); }
+  function render(){ T.preserveFocus(()=>{ renderSchedule(); renderPool(); renderCustom(); }); paintFab(); if(budgetOpen && !(document.activeElement && document.activeElement.dataset && document.activeElement.dataset.focusKey==="party")) paintBudget(); }
 
   $("trashBtn").addEventListener("click",()=>T.openTrash({
     load: async()=>{
@@ -1004,6 +1039,155 @@ body.is-dragging, body.is-dragging *{cursor:grabbing !important;user-select:none
     }
     dayRoutes.set(day,{ day, sig:trip.sig, legs:data.legs, computed_at:new Date().toISOString() });
     render(); T.toast("Exact travel times added for "+fmtDay(day)+".");
+  }
+
+  // ---------- bookings + budget ----------
+  let party=null;   // group size for splitting costs (null = not set yet)
+  function fmtUSD(n){ return new Intl.NumberFormat("en-US",{ style:"currency", currency:"USD", maximumFractionDigits: Math.round(n*100)%100 ? 2 : 0 }).format(n); }
+  // Per-person and whole-group cost for one item (null when it can't be worked out without a group size).
+  function itemCost(it){
+    if(it.cost==null || it.cost==="") return null;
+    const c=Number(it.cost);
+    return it.cost_per==="group" ? { pp: party ? c/party : null, group:c } : { pp:c, group: party ? c*party : null };
+  }
+  function costText(it){
+    const c=Number(it.cost);
+    if(it.cost_per==="group") return fmtUSD(c)+" total"+(party ? " (≈"+fmtUSD(c/party)+" each)" : "");
+    return fmtUSD(c)+" per person"+(party && party>1 ? " ("+fmtUSD(c*party)+" for "+party+")" : "");
+  }
+  async function quickBooked(it){
+    const prev={ booking_status:it.booking_status };
+    const { error } = await sb.from("schedule_items").update({ booking_status:"booked", ...T.by() }).eq("id",it.id);
+    if(error){ T.toast("Couldn't update that."); return; }
+    it.booking_status="booked"; render();
+    T.toast("Marked "+it.name+" as booked. Add the confirmation number under Booking & cost.", async()=>{
+      T.ok(await sb.from("schedule_items").update({ ...prev, ...T.by() }).eq("id",it.id)); await load(true);
+    });
+  }
+  function bookingEditor(it){
+    const key="book:"+it.id;
+    if(!open || open.key!==key || !open.draft) open={ key, fresh:open&&open.key===key&&open.fresh, draft:{
+      status:it.booking_status||"", conf:it.confirmation||"", url:it.booking_url||"",
+      cost: it.cost!=null ? String(Number(it.cost)) : "", per: it.cost_per||"person" } };
+    const d=open.draft;
+    const box=el("div","editor booking-editor"); box.setAttribute("role","group"); box.setAttribute("aria-label","Booking and cost for "+it.name);
+    const lab=(t,ctrl)=>{ const l=el("label"); l.append(t,ctrl); return l; };
+    const sel=(opts,val,prop)=>{ const s=el("select"); for(const [v,t] of opts){ const o=el("option","",t); o.value=v; s.append(o); } s.value=val; s.addEventListener("change",()=>{ d[prop]=s.value; paint(); }); return s; };
+    const inp=(type,prop,attrs)=>{ const i=el("input"); i.type=type; i.value=d[prop]; Object.assign(i,attrs||{}); i.addEventListener("input",()=>{ d[prop]=i.value; }); return i; };
+    const st=sel([["","No booking needed"],["needed","Needs booking"],["booked","Booked ✓"]], d.status, "status");
+    const r1=el("div","row two"); r1.append(lab("Booking",st));
+    const costIn=inp("number","cost",{ min:0, max:100000, step:"0.01", placeholder:"e.g. 45", inputMode:"decimal" });
+    const perSel=sel([["person","per person"],["group","total for the group"]], d.per, "per");
+    const r2=el("div","row two"); r2.append(lab("Cost ($, optional)",costIn), lab("Cost is…",perSel));
+    const r3=el("div","row two");
+    const confIn=inp("text","conf",{ maxLength:120, placeholder:"e.g. R-48213" });
+    const urlIn=inp("url","url",{ maxLength:500, placeholder:"https://…" });
+    r3.append(lab("Confirmation #",confIn), lab("Booking link",urlIn));
+    const err=el("div","err"); err.setAttribute("role","alert");
+    function paint(){ r3.hidden = d.status!=="booked"; }
+    paint();
+    const btns=el("div","btns");
+    const save=el("button","btn btn-primary","Save"); save.type="button";
+    const cancel=el("button","btn btn-ghost","Cancel"); cancel.type="button";
+    cancel.onclick=()=>{ open=null; render(); };
+    save.onclick=async()=>{
+      err.textContent="";
+      const cost = d.cost.trim()==="" ? null : Number(d.cost);
+      if(cost!=null && (!isFinite(cost) || cost<0 || cost>100000)){ err.textContent="Cost should be a number between 0 and 100,000."; costIn.focus(); return; }
+      let url = d.status==="booked" ? d.url.trim() : (it.booking_url||"");
+      if(url && !/^https?:\/\//i.test(url)) url="https://"+url;
+      if(url && url.length>500){ err.textContent="That link is too long."; return; }
+      const upd={ booking_status:d.status, cost: cost==null ? null : Math.round(cost*100)/100, cost_per:d.per,
+                  confirmation: d.status==="booked" ? d.conf.trim().slice(0,120) : (it.confirmation||""), booking_url: url||null, ...T.by() };
+      const prev={ booking_status:it.booking_status||"", cost:it.cost, cost_per:it.cost_per||"person", confirmation:it.confirmation||"", booking_url:it.booking_url||null };
+      save.disabled=true;
+      const { error } = await sb.from("schedule_items").update(upd).eq("id",it.id);
+      save.disabled=false;
+      if(error){ err.textContent="That didn't save. Try again."; return; }
+      Object.assign(it, upd); open=null; render();
+      T.toast("Saved booking details for "+it.name+".", async()=>{ T.ok(await sb.from("schedule_items").update({ ...prev, ...T.by() }).eq("id",it.id)); await load(true); });
+    };
+    btns.append(save,cancel);
+    box.append(r1,r2,r3,err,btns);
+    if(open.fresh){ open.fresh=false; setTimeout(()=>{ st.focus(); box.scrollIntoView({block:"nearest"}); },0); }
+    return box;
+  }
+
+  // Budget & bookings panel
+  const budget=T.makeDrawer("Budget & bookings");
+  let budgetOpen=false;
+  budget.d.addEventListener("close",()=>{ budgetOpen=false; });
+  $("budgetBtn").addEventListener("click",()=>{ budgetOpen=true; paintBudget(); budget.d.showModal(); });
+  function jumpToItem(id){
+    if(budget.d.open) budget.d.close();
+    if(sheetIsOpen()) closeSheet(false);
+    const row=document.querySelector('.entry[data-id="'+id+'"]'); if(!row) return;
+    row.scrollIntoView({ behavior:"smooth", block:"center" });
+    waitForScrollEnd().then(()=>{ const r=document.querySelector('.entry[data-id="'+id+'"]')||row; r.classList.remove("flash"); void r.offsetWidth; r.classList.add("flash"); });
+  }
+  function paintBudget(){
+    if(!budgetOpen) return;
+    const L=budget.list; L.replaceChildren();
+    const li=(cls)=>{ const x=el("li","bud"+(cls?" "+cls:"")); L.append(x); return x; };
+    // group size
+    const g=li(); g.append(el("h3","","Group size"));
+    const pr=el("div","party");
+    const pin=el("input"); pin.type="number"; pin.min=1; pin.max=50; pin.step=1; pin.value=party||""; pin.placeholder="?"; pin.setAttribute("aria-label","Number of people");
+    pin.dataset.focusKey="party";
+    let t=null;
+    pin.addEventListener("input",()=>{ clearTimeout(t); t=setTimeout(async()=>{
+      const n=parseInt(pin.value,10); if(!(n>=1 && n<=50)) return;
+      const { error } = await sb.from("trip_settings").update({ value:{ size:n }, updated_at:new Date().toISOString() }).eq("key","party");
+      if(error){ T.toast("Couldn't save the group size."); return; }
+      party=n; render(); paintBudget(); setTimeout(()=>{ const x=budget.list.querySelector('[data-focus-key="party"]'); if(x){ x.focus(); } },0);
+    },500); });
+    pr.append("Splitting costs between", pin, "people");
+    g.append(pr);
+    if(!party) g.append(el("div","bud-note","Set this so group costs (like a shared dinner bill) can be split per person."));
+    // totals
+    let pp=0, ppPartial=false, grp=0, grpPartial=false, n=0, noCost=0;
+    const byDay=new Map(), byCat=new Map();
+    for(const it of items){
+      const c=itemCost(it);
+      if(!c){ if(it.place_id||it.booking_status) noCost++; continue; }
+      n++;
+      if(c.pp==null) ppPartial=true; else pp+=c.pp;
+      if(c.group==null) grpPartial=true; else grp+=c.group;
+      const k=it.day; byDay.set(k,(byDay.get(k)||0)+(c.pp||0));
+      const cat=CAT_LABEL[it.category]||"Other"; byCat.set(cat,(byCat.get(cat)||0)+(c.pp||0));
+    }
+    const tot=li(); tot.append(el("h3","","Trip total"));
+    if(!n){ tot.append(el("div","bud-note","No costs yet. Right-click a scheduled item → Booking & cost to add one.")); }
+    else{
+      const big=el("div","bud-big");
+      const b1=el("div"); b1.append(el("b","",fmtUSD(pp)+(ppPartial?"+":"")), el("span","","per person"));
+      const b2=el("div"); b2.append(el("b","",party ? fmtUSD(grp)+(grpPartial?"+":"") : "—"), el("span","",party ? "whole group ("+party+")" : "whole group (set group size)"));
+      big.append(b1,b2); tot.append(big);
+      tot.append(el("div","bud-note",n+" item"+(n>1?"s":"")+" with a cost"+(noCost?" · "+noCost+" without one yet":"")+(ppPartial?" · “+” means some group costs can't be split until you set the group size":"")));
+      const bd=li(); bd.append(el("h3","","By day (per person)"));
+      for(const [day,v] of [...byDay].sort()){ const r=el("div","bud-row"); r.append(el("span","",fmtDay(day)), el("b","",fmtUSD(v))); bd.append(r); }
+      const bc=li(); bc.append(el("h3","","By category (per person)"));
+      for(const [cat,v] of [...byCat].sort((a,b)=>b[1]-a[1])){ const r=el("div","bud-row"); r.append(el("span","",cat), el("b","",fmtUSD(v))); bc.append(r); }
+    }
+    // bookings
+    const need=items.filter(i=>i.booking_status==="needed").sort((a,b)=>a.day<b.day?-1:1);
+    const done=items.filter(i=>i.booking_status==="booked").sort((a,b)=>a.day<b.day?-1:1);
+    const nb=li(); nb.append(el("h3","","Still to book ("+need.length+")"));
+    if(!need.length) nb.append(el("div","bud-note","Nothing waiting on a reservation."));
+    for(const it of need){
+      const r=el("div","bud-row"); const left=el("div"); left.append(el("div","",it.name), el("div","sub",fmtDay(it.day)+" · "+whenText(it)));
+      const go=el("button","link","Show"); go.type="button"; go.onclick=()=>jumpToItem(it.id);
+      r.append(left,go); nb.append(r);
+    }
+    const bk=li(); bk.append(el("h3","","Booked ("+done.length+")"));
+    if(!done.length) bk.append(el("div","bud-note","No confirmed bookings yet."));
+    for(const it of done){
+      const r=el("div","bud-row"); const left=el("div"); left.append(el("div","",it.name), el("div","sub",fmtDay(it.day)+(it.confirmation?" · #"+it.confirmation:"")));
+      const right=el("div");
+      if(it.booking_url){ const a=el("a","link","Reservation"); a.href=it.booking_url; a.target="_blank"; a.rel="noopener"; right.append(a," "); }
+      const go=el("button","link","Show"); go.type="button"; go.onclick=()=>jumpToItem(it.id); right.append(go);
+      r.append(left,right); bk.append(r);
+    }
   }
 
   // ---------- phones: list as a bottom sheet ----------
@@ -1111,7 +1295,7 @@ body.is-dragging, body.is-dragging *{cursor:grabbing !important;user-select:none
 
   // ---------- day summaries + trip strip ----------
   function daySummary(list, placeById){
-    const counts={}; let lunch=false, dinner=false, hoursIssues=0;
+    const counts={}; let lunch=false, dinner=false, hoursIssues=0, pp=0, ppPartial=false, group=0, groupPartial=false, costN=0, toBook=0;
     for(const it of list){
       const c=["attraction","restaurant","location","shopping"].includes(it.category)?it.category:"other";
       counts[c]=(counts[c]||0)+1;
@@ -1121,8 +1305,11 @@ body.is-dragging, body.is-dragging *{cursor:grabbing !important;user-select:none
         if(it.slot==="dinner" || (t!=null && t>=1020 && t<1350)) dinner=true;
       }
       const hc=hoursCheck(it, placeById.get(it.place_id)); if(hc && hc.warn) hoursIssues++;
+      if(it.booking_status==="needed") toBook++;
+      const ic=itemCost(it);
+      if(ic){ costN++; if(ic.pp==null) ppPartial=true; else pp+=ic.pp; if(ic.group==null) groupPartial=true; else group+=ic.group; }
     }
-    return { n:list.length, counts, lunch, dinner, hoursIssues };
+    return { n:list.length, counts, lunch, dinner, hoursIssues, pp, ppPartial, group, groupPartial, costN, toBook };
   }
   function renderStrip(byDay, sums){
     const strip=el("nav","strip"); strip.setAttribute("aria-label","Trip days");
@@ -1131,12 +1318,13 @@ body.is-dragging, body.is-dragging *{cursor:grabbing !important;user-select:none
       const b=el("button","sday"+(sm.n>=5?" l3":sm.n>=3?" l2":sm.n>=1?" l1":"")+(HOLIDAYS[day]?" hol":"")); b.type="button";
       const dd=new Date(day+"T12:00:00Z");
       b.append(el("span","wd",dd.toLocaleDateString(undefined,{weekday:"short",timeZone:"UTC"})), el("span","dn",String(dd.getUTCDate())), el("span","bar"));
-      const issues = sm.n && (!sm.lunch || !sm.dinner || sm.hoursIssues);
+      const issues = sm.n && (!sm.lunch || !sm.dinner || sm.hoursIssues || sm.toBook);
       if(issues) b.append(el("span","dot"));
       const parts=[fmtDay(day)+(HOLIDAYS[day]?" ("+HOLIDAYS[day]+")":""), sm.n ? sm.n+(sm.n===1?" item":" items") : "nothing planned"];
       if(sm.n && !sm.dinner) parts.push("no dinner yet");
       if(sm.n && !sm.lunch) parts.push("no lunch yet");
       if(sm.hoursIssues) parts.push(sm.hoursIssues+" hours conflict"+(sm.hoursIssues>1?"s":""));
+      if(sm.toBook) parts.push(sm.toBook+" still to book");
       b.title=parts.join(" · "); b.setAttribute("aria-label",parts.join(", "));
       b.onclick=()=>{
         const sec=$("day-"+day); if(!sec) return;

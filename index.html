@@ -65,6 +65,7 @@ main{max-width:980px;margin:0 auto;padding:20px}
 .meta{color:var(--muted);font-size:14px}
 .desc{font-size:14px;margin-top:3px;max-width:60ch}
 .ai-note{font-size:12px;color:var(--muted)}
+.resv{font-size:13px;font-weight:700;color:var(--food);margin-top:2px}
 .menu{position:fixed;z-index:50;min-width:220px;max-width:300px;background:var(--panel);border:1px solid var(--line);border-radius:8px;box-shadow:0 10px 28px rgba(0,0,0,.2);padding:6px;display:grid}
 .menu[hidden]{display:none}
 .menu button{all:unset;box-sizing:border-box;padding:8px 10px;border-radius:5px;font-size:15px;cursor:pointer;color:var(--ink)}
@@ -111,7 +112,7 @@ main{max-width:980px;margin:0 auto;padding:20px}
 .foot{margin-top:32px;color:var(--muted);font-size:13px;max-width:70ch}
 </style>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
-<link rel="stylesheet" href="shared.css?v=202610022041">
+<link rel="stylesheet" href="shared.css?v=202610022047">
 </head>
 <body>
 <header class="sign">
@@ -170,8 +171,8 @@ main{max-width:980px;margin:0 auto;padding:20px}
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="shared.js?v=202610022041"></script>
-<script src="maps.js?v=202610022041"></script>
+<script src="shared.js?v=202610022047"></script>
+<script src="maps.js?v=202610022047"></script>
 <script>
 (function(){
   // Public client config. The anon key is meant to be public; access is controlled by row-level security.
@@ -290,6 +291,16 @@ main{max-width:980px;margin:0 auto;padding:20px}
     });
   }
 
+  async function toggleBooking(p){
+    const prev=!!p.needs_booking, next=!prev;
+    p.needs_booking=next; render();
+    const { error } = await sb.from("places").update({ needs_booking:next, ...T.by() }).eq("id", p.id);
+    if(error){ p.needs_booking=prev; render(); setStatus("Couldn't update "+p.name+"."); return; }
+    T.toast(next ? p.name+" needs a reservation. It'll show as “Needs booking” when scheduled." : p.name+": no reservation needed.", async()=>{
+      T.ok(await sb.from("places").update({ needs_booking:prev, ...T.by() }).eq("id", p.id)); p.needs_booking=prev; render();
+    });
+  }
+
   async function movePlace(p, cat){
     const prev = p.category;
     p.category = cat; render();                       // optimistic
@@ -366,6 +377,7 @@ main{max-width:980px;margin:0 auto;padding:20px}
       editing={ id:p.id, draft:p.description||p.summary||"", fresh:true }; render();
     });
     if(p.description) menuItem(p.summary ? "Reset to Google's description" : "Clear description", ()=>saveDescription(p,""));
+    menuItem(p.needs_booking ? "No reservation needed" : "Needs a reservation", ()=>toggleBooking(p));
     menuItem(openThreads.has(p.id) ? "Hide comments" : "Comments", ()=>toggleThread(p.id));
     if(tally(p.id).legacy) menuItem("Clear earlier votes", ()=>clearLegacyVotes(p));
     menu.append(el("hr"));
@@ -414,6 +426,7 @@ main{max-width:980px;margin:0 auto;padding:20px}
       const bits=[p.type,ratingText(p),p.address].filter(Boolean);
       if(bits.length) main.append(el("div","meta",bits.join(" · ")));
       appendSummary(main,p);
+      if(p.needs_booking) main.append(el("div","resv","🎟 Reservation needed"));
       if(p.created_by) main.append(el("div","byline","Added by "+p.created_by));
       const reacts=el("div","reacts");
       for(const [val,emoji,cls,label,n,names] of [[1,"👍","up","Thumbs up",t.up,t.upNames],[-1,"👎","dn","Thumbs down",t.down,t.downNames]]){
