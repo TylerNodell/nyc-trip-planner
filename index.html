@@ -64,6 +64,18 @@ main{max-width:980px;margin:0 auto;padding:20px}
 .meta{color:var(--muted);font-size:14px}
 .desc{font-size:14px;margin-top:3px;max-width:60ch}
 .ai-note{font-size:12px;color:var(--muted)}
+.menu{position:fixed;z-index:50;min-width:220px;max-width:300px;background:var(--panel);border:1px solid var(--line);border-radius:8px;box-shadow:0 10px 28px rgba(0,0,0,.2);padding:6px;display:grid}
+.menu[hidden]{display:none}
+.menu button{all:unset;box-sizing:border-box;padding:8px 10px;border-radius:5px;font-size:15px;cursor:pointer;color:var(--ink)}
+.menu button:hover,.menu button:focus-visible{background:var(--bg)}
+.menu button.danger{color:var(--food)}
+.menu hr{border:0;border-top:1px solid var(--line);margin:4px 2px;width:auto}
+.menu-title{font-size:12px;font-weight:700;color:var(--muted);padding:4px 10px 2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.desc-editor{margin-top:8px;display:grid;gap:8px;max-width:60ch}
+.desc-editor textarea{width:100%;min-height:72px;padding:8px 10px;border:2px solid var(--focus);border-radius:6px;background:var(--panel);color:var(--ink);font:inherit;font-size:14px;resize:vertical}
+.desc-editor .btns{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.desc-editor .hint{font-size:12px;color:var(--muted)}
+.btn-sm{padding:7px 12px;font-size:14px}
 .warn{color:var(--food);font-size:14px;font-weight:600}
 .cand .btn{align-self:center}
 
@@ -132,7 +144,7 @@ main{max-width:980px;margin:0 auto;padding:20px}
     <div id="listOther"></div>
   </section>
 
-  <p class="foot">Anyone with this link can add places, react, and remove them. Changes show up live for everyone. Places are grouped by neighborhood, with thumbs-up spots first.</p>
+  <p class="foot">Anyone with this link can add places, react, and remove them. Changes show up live for everyone. Places are grouped by neighborhood, with thumbs-up spots first. Right-click a place (or tap More) to move it, write your own description, or remove it.</p>
 </main>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
@@ -150,6 +162,8 @@ main{max-width:980px;margin:0 auto;padding:20px}
   const $ = id => document.getElementById(id);
   const statusEl = $("status");
   let places = [];
+  let editing = null;   // {id, draft, fresh} for the description editor; survives live re-renders
+  let deferred = false;
 
   if(!window.supabase){ statusEl.textContent = "Couldn't load the app. Check your connection and refresh."; return; }
   const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -164,6 +178,11 @@ main{max-width:980px;margin:0 auto;padding:20px}
     return "https://www.google.com/maps/search/?api=1&query="+encodeURIComponent([p.name,p.address||p.neighborhood,"New York"].filter(Boolean).join(", "));
   }
   function appendSummary(parent,p){
+    if(p.description){
+      parent.append(el("div","desc",p.description));
+      parent.append(el("div","ai-note","Custom description"));
+      return;
+    }
     if(!p.summary) return;
     parent.append(el("div","desc",p.summary));
     if(p.summary_ai) parent.append(el("div","ai-note","Summarized with Gemini"));
@@ -178,8 +197,15 @@ main{max-width:980px;margin:0 auto;padding:20px}
   async function load(){
     const { data, error } = await sb.from("places").select("*").order("created_at");
     if(error){ setStatus("Couldn't load the list. Refresh to try again."); return; }
-    places = data; render();
+    places = data;
+    if(editing && !places.some(x=>x.id===editing.id)) editing=null;
+    // Don't redraw under someone mid-typing; catch up when they leave the editor.
+    if(document.activeElement && document.activeElement.closest && document.activeElement.closest(".desc-editor")){ deferred=true; return; }
+    render();
   }
+  document.addEventListener("focusout",()=>{ setTimeout(()=>{
+    if(deferred && !(document.activeElement&&document.activeElement.closest&&document.activeElement.closest(".desc-editor"))){ deferred=false; render(); }
+  },0); });
 
   async function addPlace(p){
     const rec = {
@@ -212,7 +238,96 @@ main{max-width:980px;margin:0 auto;padding:20px}
     const { error } = await sb.from("places").delete().eq("id", p.id);
     if(error){ setStatus("Couldn't remove "+p.name+"."); return; }
     places = places.filter(x=>x.id!==p.id); render();
+    setStatus("Removed "+p.name+".");
   }
+
+  async function movePlace(p, cat){
+    const prev = p.category;
+    p.category = cat; render();                       // optimistic
+    const { error } = await sb.from("places").update({ category:cat }).eq("id", p.id);
+    if(error){ p.category = prev; render(); setStatus("Couldn't move "+p.name+"."); return; }
+    setStatus("Moved "+p.name+" to "+CATS[cat].label+".");
+  }
+
+  async function saveDescription(p, text){
+    text = (text||"").trim().slice(0,500);
+    if(text === (p.summary||"").trim()) text = "";   // unchanged from Google's = no custom description
+    const { error } = await sb.from("places").update({ description:text }).eq("id", p.id);
+    if(error){ setStatus("Couldn't save that description."); return false; }
+    p.description = text; editing = null; render();
+    setStatus(text ? "Saved the description for "+p.name+"." : "Reset "+p.name+" to Google's description.");
+    return true;
+  }
+
+  function descEditor(p){
+    const box=el("div","desc-editor");
+    const ta=el("textarea"); ta.maxLength=500; ta.value=editing.draft;
+    ta.setAttribute("aria-label","Description for "+p.name);
+    ta.placeholder="What should everyone know about this place?";
+    ta.addEventListener("input",()=>{ editing.draft=ta.value; });
+    const btns=el("div","btns");
+    const save=el("button","btn btn-primary btn-sm","Save"); save.type="button";
+    const cancel=el("button","btn btn-ghost btn-sm","Cancel"); cancel.type="button";
+    save.onclick=async()=>{ save.disabled=true; if(!(await saveDescription(p, editing.draft))) save.disabled=false; };
+    cancel.onclick=()=>{ editing=null; render(); };
+    ta.addEventListener("keydown",e=>{
+      if(e.key==="Escape"){ e.preventDefault(); cancel.click(); }
+      if(e.key==="Enter" && (e.ctrlKey||e.metaKey)){ e.preventDefault(); save.click(); }
+    });
+    btns.append(save,cancel,el("span","hint","Everyone sees this instead of Google's summary."));
+    box.append(ta,btns);
+    if(editing.fresh){ editing.fresh=false; setTimeout(()=>{ ta.focus(); ta.setSelectionRange(ta.value.length,ta.value.length); },0); }
+    return box;
+  }
+
+  // ---------- context menu ----------
+  const menu=el("div","menu"); menu.setAttribute("role","menu"); menu.hidden=true; document.body.append(menu);
+  let menuReturnFocus=null;
+  function closeMenu(restore){
+    if(menu.hidden) return;
+    menu.hidden=true; menu.replaceChildren();
+    if(restore && menuReturnFocus && document.contains(menuReturnFocus)) menuReturnFocus.focus();
+    menuReturnFocus=null;
+  }
+  function menuItem(label, fn, cls){
+    const b=el("button",cls||"",label); b.type="button"; b.setAttribute("role","menuitem"); b.tabIndex=-1;
+    b.onclick=()=>{ closeMenu(false); fn(); };
+    menu.append(b);
+  }
+  function openMenu(p, x, y, focusFirst, returnTo){
+    closeMenu(false);
+    menuReturnFocus=returnTo||null;
+    menu.setAttribute("aria-label","Options for "+p.name);
+    menu.append(el("div","menu-title",p.name));
+    const cur=normCat(p.category);
+    for(const c of ["attraction","restaurant","other"]) if(c!==cur) menuItem("Move to "+CATS[c].label, ()=>movePlace(p,c));
+    menu.append(el("hr"));
+    menuItem(p.description ? "Edit description…" : "Write a description…", ()=>{
+      editing={ id:p.id, draft:p.description||p.summary||"", fresh:true }; render();
+    });
+    if(p.description) menuItem(p.summary ? "Reset to Google's description" : "Clear description", ()=>saveDescription(p,""));
+    menu.append(el("hr"));
+    menuItem("Open in Google Maps", ()=>window.open(mapsUrl(p),"_blank","noopener"));
+    menuItem("Remove", ()=>removePlace(p), "danger");
+    menu.hidden=false;
+    const r=menu.getBoundingClientRect();
+    const vw=document.documentElement.clientWidth, vh=document.documentElement.clientHeight;
+    menu.style.left=Math.max(8,Math.min(x,vw-r.width-8))+"px";
+    menu.style.top=Math.max(8,Math.min(y,vh-r.height-8))+"px";
+    if(focusFirst) menu.querySelector("button").focus();
+  }
+  document.addEventListener("pointerdown",e=>{ if(!menu.hidden && !menu.contains(e.target)) closeMenu(false); });
+  window.addEventListener("scroll",()=>closeMenu(false),true);
+  window.addEventListener("resize",()=>closeMenu(false));
+  menu.addEventListener("keydown",e=>{
+    const items=[...menu.querySelectorAll("button")];
+    const i=items.indexOf(document.activeElement);
+    if(e.key==="Escape"||e.key==="Tab"){ e.preventDefault(); closeMenu(true); }
+    else if(e.key==="ArrowDown"){ e.preventDefault(); items[(i+1)%items.length].focus(); }
+    else if(e.key==="ArrowUp"){ e.preventDefault(); items[(i-1+items.length)%items.length].focus(); }
+    else if(e.key==="Home"){ e.preventDefault(); items[0].focus(); }
+    else if(e.key==="End"){ e.preventDefault(); items[items.length-1].focus(); }
+  });
 
   // ---------- render ----------
   function renderList(cat, container, countEl){
@@ -247,11 +362,21 @@ main{max-width:980px;margin:0 auto;padding:20px}
       }
       top.append(main,reacts);
       row.append(top);
+      if(editing && editing.id===p.id) row.append(descEditor(p));
       const act=el("div","item-actions");
       const a=el("a","link","Open in Google Maps"); a.href=mapsUrl(p); a.target="_blank"; a.rel="noopener";
-      const rm=el("button","link danger","Remove"); rm.type="button"; rm.onclick=()=>removePlace(p);
-      act.append(a,rm);
+      const more=el("button","link","More"); more.type="button";
+      more.setAttribute("aria-haspopup","menu"); more.setAttribute("aria-label","More options for "+p.name);
+      more.onclick=(e)=>{ const r=more.getBoundingClientRect(); openMenu(p, r.left, r.bottom+4, e.detail===0, more); };
+      act.append(a,more);
       row.append(act);
+      row.addEventListener("contextmenu",(e)=>{
+        if(e.target.closest(".desc-editor")) return;      // keep the normal menu for copy/paste while typing
+        e.preventDefault();
+        let x=e.clientX, y=e.clientY, kb=false;
+        if(!x && !y){ const r=row.getBoundingClientRect(); x=r.left+16; y=r.top+16; kb=true; }
+        openMenu(p, x, y, kb, kb ? document.activeElement : null);
+      });
       container.append(row);
     }
     return items.length;
