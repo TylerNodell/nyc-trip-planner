@@ -1,0 +1,46 @@
+-- Already applied to project jkehxprjvrivlzkgkvgw.
+-- Some events only run on certain weekdays (0 = Sunday … 6 = Saturday).
+alter table public.seasonal_events add column weekdays int[];
+
+insert into public.seasonal_events (sort, name, query, category, starts, ends, confirmed, outdoor, needs_booking, blurb, tip, url, weekdays) values
+(17,'Met Christmas Tree & Neapolitan Crèche','Metropolitan Museum of Art','attraction','2026-11-24','2027-01-06',false,false,false,
+ 'A 20-foot tree hung with 18th-century Neapolitan angels and nativity figures, in the Medieval Sculpture Hall.',
+ 'Included with Met admission. The lighting ceremony evenings add live music.','https://www.metmuseum.org',null),
+(18,'Origami Holiday Tree at the Natural History Museum','American Museum of Natural History','attraction','2026-11-23','2027-01-04',false,false,false,
+ 'A tree covered in hundreds of hand-folded origami animals and fossils, a museum tradition since the 1970s.',
+ 'Good for a cold or rainy day; included with museum admission.','https://www.amnh.org',null),
+(19,'"A Christmas Carol" manuscript at the Morgan','The Morgan Library & Museum','attraction','2026-11-20','2027-01-04',false,false,false,
+ 'Dickens'' original handwritten manuscript of A Christmas Carol, displayed every holiday season, in a gorgeous old library.',
+ 'Quiet and quick; pairs well with Grand Central or Bryant Park nearby.','https://www.themorgan.org',null),
+(20,'Lightscape at Brooklyn Botanic Garden','Brooklyn Botanic Garden','attraction','2026-11-20','2027-01-03',false,true,true,
+ 'An evening walk through the garden lit with large-scale light installations.',
+ 'Timed evening tickets; holiday week sells out. Dress warmly; it''s about an hour outdoors.','https://www.bbg.org',null),
+(21,'Bronx Zoo Holiday Lights','Bronx Zoo','attraction','2026-11-20','2027-01-03',false,true,true,
+ 'Lantern animals and light tunnels across the zoo on select evenings.',
+ 'Runs on select nights only; check the calendar and book a timed ticket.','https://bronxzoo.com',null),
+(22,'Bergdorf Goodman holiday windows','Bergdorf Goodman','shopping','2026-11-20','2027-01-04',false,true,false,
+ 'The most elaborate, art-installation-style windows on Fifth Avenue.',
+ 'Walk Fifth Ave from Bergdorf (58th) down to Saks (50th) for the best window crawl.','https://www.bergdorfgoodman.com',null),
+(23,'Park Avenue holiday trees','Park Avenue Malls','attraction','2026-12-06','2027-01-04',false,true,false,
+ 'Dozens of lit trees running down the Park Avenue medians, about 54th to 97th St.',
+ 'Prettiest after dark; easy to see from a cab or on a walk to the Upper East Side.',null,null),
+(24,'Winter lights at Brookfield Place','Brookfield Place New York','attraction','2026-12-01','2027-01-04',false,false,false,
+ 'An indoor light installation in the Winter Garden atrium, with Hudson River views.',
+ 'Indoors and free; pair with the 9/11 Memorial or a walk along the Battery Park waterfront.','https://bfplny.com',null),
+(25,'Skating at LeFrak Center (Prospect Park)','LeFrak Center at Lakeside','attraction','2026-11-20','2027-03-15',false,true,false,
+ 'Outdoor skating by the lake in Prospect Park; calmer and cheaper than Manhattan rinks.',
+ 'Good add-on to a Brooklyn day (Botanic Garden, Grand Army Plaza).','https://www.lakesidebrooklyn.com',null),
+(26,'Christmas Eve Midnight Mass at St. Patrick''s','St. Patrick''s Cathedral','attraction','2026-12-24','2026-12-24',false,false,true,
+ 'Midnight Mass in the landmark cathedral on Fifth Avenue.',
+ 'Tickets/passes are required and go fast; other Christmas Eve and Christmas Day Masses are open to all, but arrive very early.','https://saintpatrickscathedral.org',null),
+(27,'New York Philharmonic New Year''s Eve concert','David Geffen Hall','attraction','2026-12-31','2026-12-31',false,false,true,
+ 'A festive New Year''s Eve concert at Lincoln Center, done in time to celebrate after.',
+ 'Usually an early-evening show; book in the fall.','https://nyphil.org',null),
+(28,'Coney Island Polar Bear Plunge','Coney Island Beach','attraction','2027-01-01','2027-01-01',false,true,false,
+ 'Thousands run into the Atlantic on New Year''s Day; watching from the boardwalk is half the fun.',
+ 'Plunge is around 1 PM; registration to swim, free to watch. Bring layers either way.','https://polarbearclub.org',null),
+(29,'Holiday Nostalgia Train (vintage subway)','Second Avenue Subway 72nd Street station','attraction','2026-12-20','2026-12-27',false,false,false,
+ 'Restored 1930s subway cars with wicker seats and ceiling fans run on the regular line, Sundays only.',
+ 'Free with a normal fare. Sundays only (Dec 20 and Dec 27 on your trip); check the MTA for the exact route and times.','https://new.mta.info',array[0]);
+
+select count(*) from public.seasonal_events;

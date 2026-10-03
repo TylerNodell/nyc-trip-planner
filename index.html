@@ -90,6 +90,8 @@ main{max-width:980px;margin:0 auto;padding:20px}
 .hol-tip{font-size:12.5px;color:var(--muted)}
 .hol-act{display:flex;gap:10px;align-items:center;margin-top:4px;font-size:14px}
 .hol-on{font-size:13px;font-weight:700;color:var(--loc)}
+.hol-done{font-size:13px;color:var(--muted);padding:0 0 12px}
+.hol-done b{color:var(--loc)}
 .menu{position:fixed;z-index:50;min-width:220px;max-width:300px;background:var(--panel);border:1px solid var(--line);border-radius:8px;box-shadow:0 10px 28px rgba(0,0,0,.2);padding:6px;display:grid}
 .menu[hidden]{display:none}
 .menu button{all:unset;box-sizing:border-box;padding:8px 10px;border-radius:5px;font-size:15px;cursor:pointer;color:var(--ink)}
@@ -136,7 +138,7 @@ main{max-width:980px;margin:0 auto;padding:20px}
 .foot{margin-top:32px;color:var(--muted);font-size:13px;max-width:70ch}
 </style>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
-<link rel="stylesheet" href="shared.css?v=202610022128">
+<link rel="stylesheet" href="shared.css?v=202610030629">
 </head>
 <body>
 <header class="sign">
@@ -162,6 +164,7 @@ main{max-width:980px;margin:0 auto;padding:20px}
   <details class="holiday" id="holiday">
     <summary>🎄 Holiday in NYC <span class="hol-sub" id="holSub"></span></summary>
     <div class="hol-grid" id="holList"></div>
+    <div class="hol-done" id="holDone"></div>
   </details>
   <div class="view-toggle" role="group" aria-label="View">
     <button type="button" id="viewList" aria-pressed="true">List</button><button type="button" id="viewMap" aria-pressed="false">Map</button>
@@ -199,8 +202,8 @@ main{max-width:980px;margin:0 auto;padding:20px}
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="shared.js?v=202610022128"></script>
-<script src="maps.js?v=202610022128"></script>
+<script src="shared.js?v=202610030629"></script>
+<script src="maps.js?v=202610030629"></script>
 <script>
 (function(){
   // Public client config. The anon key is meant to be public; access is controlled by row-level security.
@@ -536,13 +539,20 @@ main{max-width:980px;margin:0 auto;padding:20px}
   function renderHoliday(){
     const list=$("holList"); list.replaceChildren();
     const during=events.filter(e=>e.ends>=TRIP_START && e.starts<=TRIP_END);
-    $("holSub").textContent=during.length ? during.length+" seasonal things during your trip" : "";
-    for(const ev of during){
+    const added=during.filter(ev=>places.some(p=>p.event_id===ev.id));
+    const fresh=during.filter(ev=>!added.includes(ev));   // only show ideas that aren't on the list yet
+    $("holSub").textContent = fresh.length ? fresh.length+" more seasonal idea"+(fresh.length>1?"s":"")+" for your trip" : "You've added every holiday pick";
+    const done=$("holDone"); done.replaceChildren();
+    if(added.length){ done.append(el("b","","✓ On your list: "), added.map(e=>e.name).join(" · ")); }
+    if(!fresh.length) list.append(el("div","hol-tip","Nothing left to suggest. Everything here is already on your list."));
+    for(const ev of fresh){
       const card=el("div","hol");
       const nm=el("div","hol-name"); nm.append(bullet(normCat(ev.category)), el("span","",ev.name)); card.append(nm);
       const from=ev.starts>TRIP_START?ev.starts:TRIP_START, to=ev.ends<TRIP_END?ev.ends:TRIP_END;
       const partial = ev.starts>TRIP_START || ev.ends<TRIP_END;
-      const span = ev.starts===ev.ends ? shortDate(ev.starts)+" only" : partial ? "During your trip: "+shortDate(from)+" – "+shortDate(to) : "Runs your whole trip";
+      const WD=["Sundays","Mondays","Tuesdays","Wednesdays","Thursdays","Fridays","Saturdays"];
+      const only = Array.isArray(ev.weekdays) && ev.weekdays.length ? ev.weekdays.map(d=>WD[d]).join(" & ")+" only · " : "";
+      const span = ev.starts===ev.ends ? shortDate(ev.starts)+" only" : only+(partial ? "During your trip: "+shortDate(from)+" – "+shortDate(to) : "Runs your whole trip");
       card.append(el("div","hol-dates"+(partial?" short":""), span));
       const tags=el("div","hol-tags");
       tags.append(el("span","hol-tag"+(ev.confirmed?" ok":""), ev.confirmed ? "2026 dates confirmed" : "Usual dates · confirm closer to the trip"));
@@ -552,13 +562,9 @@ main{max-width:980px;margin:0 auto;padding:20px}
       if(ev.blurb) card.append(el("div","hol-blurb",ev.blurb));
       if(ev.tip) card.append(el("div","hol-tip",ev.tip));
       const act=el("div","hol-act");
-      const onList=places.find(p=>p.event_id===ev.id);
-      if(onList) act.append(el("span","hol-on","✓ On the list"));
-      else{
-        const add=el("button","btn btn-primary btn-sm","Add to our list"); add.type="button";
-        add.onclick=()=>addEvent(ev, add);
-        act.append(add);
-      }
+      const add=el("button","btn btn-primary btn-sm","Add to our list"); add.type="button";
+      add.onclick=()=>addEvent(ev, add);
+      act.append(add);
       if(ev.url){ const a=el("a","link","Details"); a.href=ev.url; a.target="_blank"; a.rel="noopener"; act.append(a); }
       card.append(act);
       list.append(card);
@@ -584,7 +590,8 @@ main{max-width:980px;margin:0 auto;padding:20px}
       return;
     }
     const base = match || { name:ev.name };
-    const ok = await addPlace({ ...base, name: match ? match.name : ev.name, category:ev.category, event_id:ev.id, needs_booking:ev.needs_booking });
+    // Keep the event's own name ("Holiday Nostalgia Train", not the station Google finds); Google supplies address, hours and map pin.
+    const ok = await addPlace({ ...base, name: ev.name, category:ev.category, event_id:ev.id, needs_booking:ev.needs_booking });
     if(!ok){ btn.disabled=false; btn.textContent="Add to our list"; }
   }
 

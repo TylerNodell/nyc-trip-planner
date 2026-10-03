@@ -254,7 +254,7 @@ body.is-dragging, body.is-dragging *{cursor:grabbing !important;user-select:none
 .foot{color:var(--muted);font-size:13px;margin-top:8px}
 </style>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
-<link rel="stylesheet" href="shared.css?v=202610022128">
+<link rel="stylesheet" href="shared.css?v=202610030629">
 </head>
 <body>
 <header class="sign">
@@ -295,8 +295,8 @@ body.is-dragging, body.is-dragging *{cursor:grabbing !important;user-select:none
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="shared.js?v=202610022128"></script>
-<script src="maps.js?v=202610022128"></script>
+<script src="shared.js?v=202610030629"></script>
+<script src="maps.js?v=202610030629"></script>
 <script>
 (function(){
   const SUPABASE_URL = "https://jkehxprjvrivlzkgkvgw.supabase.co";
@@ -1555,6 +1555,10 @@ body.is-dragging, body.is-dragging *{cursor:grabbing !important;user-select:none
     const usual = ev.confirmed ? "" : " (usual dates)";
     const range = ev.starts===ev.ends ? shortD(ev.starts)+" only" : shortD(ev.starts)+" – "+shortD(ev.ends);
     if(it.day<ev.starts || it.day>ev.ends) return { warn: ev.name+" isn't running that day: "+range+usual };
+    if(Array.isArray(ev.weekdays) && ev.weekdays.length && !ev.weekdays.includes(dow(it.day))){
+      const WD=["Sundays","Mondays","Tuesdays","Wednesdays","Thursdays","Fridays","Saturdays"];
+      return { warn: ev.name+" only runs on "+ev.weekdays.map(d=>WD[d]).join(" & ") };
+    }
     if(ev.ends<TRIP_END && ev.starts!==ev.ends) return { info: "Seasonal: runs through "+shortD(ev.ends)+usual };
     return { info: "Seasonal: "+(ev.starts===ev.ends ? range : "runs "+range)+usual };
   }
